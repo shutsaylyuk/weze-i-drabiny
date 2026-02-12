@@ -1,0 +1,254 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Węże i drabiny</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    .topbar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border: 1px solid #ccc;
+      background: white;
+      border-radius: 6px;
+      text-decoration: none;
+      color: black;
+      font-weight: 500;
+      transition: 0.2s;
+    }
+
+    .btn:hover {
+      background: #eaeaea;
+    }
+
+    .info {
+      margin-bottom: 20px;
+    }
+
+    .message {
+      margin-top: 6px;
+      font-weight: bold;
+    }
+
+    /* Plansza */
+
+    /* Plansza – wszystko się styka */
+.board{
+  width: min(92vw, 720px);          /* skaluje się do ekranu */
+  aspect-ratio: 1 / 1;              /* plansza zawsze kwadrat */
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  gap: 0;
+  border: 2px solid #111;
+}
+
+/* Komórka – bez zaokrągleń, klasyczna kratka */
+.cell{
+  position: relative;
+  border: 1px solid #111;
+  border-radius: 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* numer pola (mały, w rogu) */
+.number{
+  position: absolute;
+  top: 6%;
+  left: 6%;
+  font-size: clamp(10px, 1.6vw, 14px);
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+/* środek pola – ikonka */
+.center-icon{
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(18px, 3.6vw, 34px);
+  line-height: 1;
+}
+/* dół pola – cel */
+.target{
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  font-size: 16px;                  /* wyraźny numer docelowy */
+  font-weight: 900;
+  padding: 2px 10px;
+  background: #fff;
+}
+
+/* wąż / drabina – różne kolory tła */
+.cell.snake{
+  background: #ffe2e2;              /* czerwone */
+}
+.cell.ladder{
+  background: #e2ffe6;              /* zielone */
+}
+
+/* target dopasowany kolorystycznie */
+.cell.snake .target{
+  background: #ffd0d0;
+}
+.cell.ladder .target{
+  background: #d4ffdb;
+}
+
+/* aktualne pole (gracz) */
+.cell.highlight{
+  outline: 4px solid #000;
+  outline-offset: -4px;             /* “wewnątrz” kratki */
+}
+
+/* pionek gracza – widoczny */
+.pawn{
+  position: absolute;
+  bottom: 8%;
+  right: 8%;
+
+  width: clamp(22px, 3.2vw, 36px);
+  height: clamp(28px, 4vw, 48px);
+}
+
+/* Główka */
+.pawn::before{
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--p-light), var(--p-dark));
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+/* Podstawa */
+.pawn::after{
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: 55%;
+  border-radius: 50% 50% 35% 35%;
+  background: radial-gradient(circle at 30% 30%, var(--p-light), var(--p-dark));
+  box-shadow:
+    inset 0 -4px 6px rgba(0,0,0,0.4),
+    0 4px 6px rgba(0,0,0,0.4);
+}
+
+
+/* kolory (zmieniasz tylko klasę) */
+.p-red   { --p-light: #ff5a5a; --p-dark: #990000; }
+.p-blue  { --p-light: #5aa8ff; --p-dark: #003b99; }
+.p-green { --p-light: #55d66a; --p-dark: #0b6b1d; }
+.p-purple{ --p-light: #b47cff; --p-dark: #5b1a99; }
+.p-black { --p-light: #666666; --p-dark: #111111; }
+
+
+
+
+  </style>
+</head>
+
+<body>
+
+  <h1>Węże i drabiny</h1>
+
+  <div class="topbar">
+    <a class="btn" href="/roll">🎲 Rzuć kostką</a>
+    <a class="btn" href="/new">🔄 Nowa gra</a>
+  </div>
+
+  <div class="info">
+   <div><b>Tura:</b> {{ players[turn].name }}</div>
+<div><b>Ostatni rzut:</b> {{ last_roll }}</div>
+
+<div style="margin-top:8px;">
+  <b>Pozycje:</b>
+  <ul style="margin:6px 0 0 18px;">
+    {% for p in players %}
+      <li>{{ p.name }}: {{ p.pos }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="message">{{ message }}</div>
+
+
+    {% if won %}
+      <h2>🏁 Wygrałaś!</h2>
+    {% endif %}
+  </div>
+
+  <!-- Plansza -->
+  <div class="board">
+    {% for idx in range(100) %}
+      {% set row = idx // 10 %}
+      {% set col = idx % 10 %}
+      {% set r = 9 - row %}
+
+      {% if (r % 2) == 0 %}
+        {% set n = r*10 + col + 1 %}
+      {% else %}
+        {% set n = r*10 + (10 - col) %}
+      {% endif %}
+
+<div class="cell
+  {% if n in snakes_ladders %}
+    {% if snakes_ladders[n] > n %}ladder{% else %}snake{% endif %}
+  {% endif %}
+  {% if n == pos %} highlight {% endif %}
+">
+  <span class="number">{{ n }}</span>
+
+  {% if n in snakes_ladders %}
+    {% if snakes_ladders[n] > n %}
+      <div class="center-icon">🪜</div>
+    {% else %}
+      <div class="center-icon">🐍</div>
+    {% endif %}
+    <div class="target">{{ snakes_ladders[n] }}</div>
+  {% endif %}
+
+  {% for pl in players %}
+      {% if pl.pos ==n %}
+         <div class="pawn {{ pl.color }}"></div>
+      {% endif %}
+  {% endfor %}
+</div>
+
+    {% endfor %}
+  </div>
+
+  <div class="legend">
+    🟢 Zielone pola – drabiny<br>
+    🔴 Czerwone pola – węże<br>
+    ● – aktualna pozycja gracza
+  </div>
+
+</body>
+</html>
