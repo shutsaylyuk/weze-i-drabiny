@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instrukcja – Węże i drabiny</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="title">Węże i drabiny</div>
+    <div class="subtitle">Instrukcja</div>
+  </div>
+
+  <div></div>
+
+  <div class="actions">
+    <a class="btn" href="/">⬅ Wróć do gry</a>
+  </div>
+</header>
+
+<main class="howto-container">
+
+  <!-- TRYBY GRY -->
+  <section class="howto-section">
+    <h2>Tryby gry</h2>
+    <ul>
+      <li><b>Hot-seat</b> – kilku graczy gra na zmianę przy jednym komputerze.</li>
+      <li><b>Vs komputer</b> – grasz przeciwko botowi wykonującemu automatyczne ruchy.</li>
+      <li><b>Multiplayer</b> – tryb rozgrywki przez sieć (w przygotowaniu).</li>
+    </ul>
+  </section>
+
+  <!-- ZASADY GRY -->
+  <section class="howto-section">
+    <h2>Zasady gry</h2>
+    <ol>
+      <li>Gra toczy się na planszy numerowanej od 1 do 100.</li>
+      <li>Kolejno rzucacie kostką i przesuwacie pionek o wyrzuconą liczbę oczek.</li>
+      <li>🪜 <b>Drabina</b> przenosi Cię na wyższe pole.</li>
+      <li>🐍 <b>Wąż</b> zsuwa Cię na niższe pole.</li>
+      <li>Aby wygrać, musisz wejść dokładnie na pole <b>100</b> (jeśli wyrzucisz za dużo – ruch przepada).</li>
+      <li><b>Bonus:</b> jeśli wyrzucisz <b>6</b>, otrzymujesz dodatkowy rzut.</li>
+    </ol>
+  </section>
+
+  <div class="howto-footer">
+    <a class="btn" href="/">⬅ Wróć do gry</a>
+  </div>
+
+</main>
+</body>

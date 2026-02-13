@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="2c103393-d294-4913-bb78-f8ea50a69a9c" name="wierzba" url="">
+        <fileTransfer accessType="SFTP" host="wierzba.wzks.uj.edu.pl" port="22" sshConfigId="5db7d76b-d7c6-4821-8406-2bbc7f51bdc5" sshConfig="23_hutsaylyuk@wierzba.wzks.uj.edu.pl:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

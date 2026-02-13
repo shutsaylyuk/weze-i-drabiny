@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig authType="PASSWORD" host="wierzba.wzks.uj.edu.pl" id="5db7d76b-d7c6-4821-8406-2bbc7f51bdc5" port="22" nameFormat="DESCRIPTIVE" username="23_hutsaylyuk" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>
