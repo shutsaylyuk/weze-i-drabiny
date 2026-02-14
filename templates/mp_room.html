@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Węże i drabiny • Multiplayer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="title">Węże i drabiny</div>
+    <div class="subtitle">Multiplayer • pokój <b>{{ room.code }}</b></div>
+  </div>
+
+  <nav class="tabs" aria-label="Tryby gry">
+    <a class="tab" href="/new?mode=hotseat&players=2">Hot-seat</a>
+    <a class="tab" href="/new?mode=ai">Vs komputer</a>
+    <a class="tab active" href="/mp">Multiplayer</a>
+  </nav>
+
+  <div class="actions">
+    <button class="btn" id="rollBtn">🎲 Rzuć</button>
+    <a class="btn" href="/mp">🚪 Lobby</a>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="info card">
+    <div class="info-row"><b>Kod pokoju:</b> <span id="roomCode">{{ room.code }}</span></div>
+    <div class="info-row"><b>Twój ID:</b> <span id="myPid">{{ my_pid or "brak (wejdź z lobby)" }}</span></div>
+    <div class="info-row"><b>Runda:</b> <span id="roundNum">1</span></div>
+    <div class="info-row"><b>Ruch:</b> <span id="turnName">-</span></div>
+
+    <div class="spacer"></div>
+
+    <ul class="positions" id="positionsList"></ul>
+
+    <div class="spacer"></div>
+
+    <div class="history" id="historyBox">
+      <div class="muted">Brak ruchów jeszcze.</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="board-wrapper">
+
+      <!-- START BOX -->
+      <div class="start-box">
+        <div class="start-title">START</div>
+        <div class="start-pawns" id="startPawns"></div>
+      </div>
+
+      <!-- BOARD -->
+      <div class="board" aria-label="Plansza 10 na 10">
+        {% for idx in range(100) %}
+          {% set row = idx // 10 %}
+          {% set col = idx % 10 %}
+          {% set r = 9 - row %}
+
+          {% if (r % 2) == 0 %}
+            {% set n = r*10 + col + 1 %}
+          {% else %}
+            {% set n = r*10 + (10 - col) %}
+          {% endif %}
+
+          <div class="cell
+            {% if n in snakes_ladders %}
+              {% if snakes_ladders[n] > n %} ladder {% else %} snake {% endif %}
+            {% endif %}
+          " data-n="{{ n }}">
+            <span class="number">{{ n }}</span>
+
+            {% if n in snakes_ladders %}
+              {% if snakes_ladders[n] > n %}
+                <div class="center-icon">🪜</div>
+              {% else %}
+                <div class="center-icon">🐍</div>
+              {% endif %}
+              <div class="target">{{ snakes_ladders[n] }}</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+const code = "{{ room.code }}";
+const myPid = "{{ my_pid or '' }}";
+
+function calcRound(moveCount, nPlayers){
+  if (!moveCount || moveCount === 0) return 1;
+  return Math.floor((moveCount - 1) / nPlayers) + 1;
+}
+
+function clearPawns(){
+  document.querySelectorAll(".board .pawn").forEach(p => p.remove());
+  document.getElementById("startPawns").innerHTML = "";
+  document.querySelectorAll(".cell").forEach(c => c.classList.remove("highlight"));
+}
+
+function render(room){
+  const players = room.players || [];
+  const turn = room.turn ?? 0;
+  const lastPlayer = room.last_player ?? 0;
+  const winner = room.winner;
+
+  // Runda + tura
+  document.getElementById("roundNum").textContent = calcRound(room.move_count || 0, players.length);
+  document.getElementById("turnName").textContent = players[turn] ? players[turn].name : "-";
+
+  // Lista pozycji
+  const ul = document.getElementById("positionsList");
+  ul.innerHTML = players.map(p => `
+    <li>
+      <span class="dot ${p.color}"></span>
+      <span class="pname">${p.name}${p.id===myPid ? " (Ty)" : ""}</span>
+      <span class="ppos">pole: <b>${p.pos}</b></span>
+    </li>
+  `).join("");
+
+  // Historia
+  const hb = document.getElementById("historyBox");
+  const hist = room.history || [];
+  if (hist.length > 0){
+    hb.innerHTML = "<ul>" + hist.slice().reverse().map(h => `<li>${h}</li>`).join("") + "</ul>";
+  } else {
+    hb.innerHTML = `<div class="muted">Brak ruchów jeszcze.</div>`;
+  }
+
+  // Pionki
+  clearPawns();
+
+  // Start
+  const start = document.getElementById("startPawns");
+  players.forEach(p => {
+    if (Number(p.pos) === 0){
+      const d = document.createElement("div");
+      d.className = `pawn ${p.color}`;
+      d.title = p.name;
+      start.appendChild(d);
+    }
+  });
+
+  // Plansza (slotowanie jak u Ciebie)
+  players.forEach((p, i) => {
+    const pos = Number(p.pos);
+    if (pos > 0){
+      const cell = document.querySelector(`.cell[data-n="${pos}"]`);
+      if (cell){
+        const d = document.createElement("div");
+        d.className = `pawn ${p.color} slot-${i}`;
+        d.title = p.name;
+        cell.appendChild(d);
+      }
+    }
+  });
+
+  // Highlight ostatniego ruchu
+  const lastPos = players[lastPlayer] ? Number(players[lastPlayer].pos) : 0;
+  if (lastPos > 0){
+    const hl = document.querySelector(`.cell[data-n="${lastPos}"]`);
+    if (hl) hl.classList.add("highlight");
+  }
+
+  // Przycisk Rzuć (Twoja tura + min 2 graczy + brak zwycięzcy)
+  const turnPlayer = players[turn];
+  const canRoll = (!winner && players.length >= 2 && myPid && turnPlayer && turnPlayer.id === myPid);
+  document.getElementById("rollBtn").disabled = !canRoll;
+}
+
+async function fetchState(){
+  const r = await fetch(`/mp/room/${code}/state`, {cache: "no-store"});
+  return await r.json();
+}
+
+async function loop(){
+  try{
+    const st = await fetchState();
+    render(st);
+  } catch(e) {}
+  setTimeout(loop, 800); // 0.8s i jest płynnie bez mrugania
+}
+
+document.getElementById("rollBtn").addEventListener("click", async () => {
+  const r = await fetch(`/mp/room/${code}/roll`, {method: "POST"});
+  let data = {};
+  try { data = await r.json(); } catch(e) {}
+  if (!r.ok){
+    alert("Nie można wykonać ruchu: " + (data.error || r.status) +
+          " | idx=" + (data.idx ?? "?") + " turn=" + (data.turn ?? "?"));
+    return;
+  } else {
+    // od razu pobierz nowy stan
+    const st = await fetchState();
+    render(st);
+  }
+});
+
+loop();
+</script>
+
+</body>
+</html>

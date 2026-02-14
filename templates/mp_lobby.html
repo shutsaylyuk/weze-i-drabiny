@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Węże i drabiny • Multiplayer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="title">Węże i drabiny</div>
+    <div class="subtitle">Multiplayer • lobby</div>
+  </div>
+
+  <nav class="tabs" aria-label="Tryby gry">
+    <a class="tab" href="/new?mode=hotseat&players=2">Hot-seat</a>
+    <a class="tab" href="/new?mode=ai">Vs komputer</a>
+    <a class="tab active" href="/mp">Multiplayer</a>
+  </nav>
+
+  <div class="actions">
+    <a class="btn secondary" href="/">⬅ Wróć do gry</a>
+  </div>
+</header>
+
+<div class="layout" style="grid-template-columns: 1fr;">
+  <main style="display:flex; justify-content:center;">
+    <section class="info card" style="max-width: 560px; width: 100%;">
+      <div class="info-row" style="font-size:18px; font-weight:800;">Wejdź do gry multiplayer</div>
+      <div class="muted" style="margin-top:6px;">
+        Utwórz pokój i wyślij kod drugiej osobie albo dołącz do istniejącego pokoju.
+      </div>
+
+      {% if error %}
+        <div class="alert" style="margin-top:12px;">{{ error }}</div>
+      {% endif %}
+
+      <div class="spacer"></div>
+
+      <div class="info-row"><b>Utwórz pokój</b></div>
+      <form method="post" action="/mp/create" style="display:grid; gap:10px; margin-top:8px;">
+        <input name="name" placeholder="Twoje imię" required>
+        <select name="players">
+          <option value="2">2 graczy</option>
+          <option value="3">3 graczy</option>
+          <option value="4">4 graczy</option>
+        </select>
+        <button class="btn" type="submit">Stwórz pokój</button>
+      </form>
+
+      <div class="spacer"></div>
+
+      <div class="info-row"><b>Dołącz do pokoju</b></div>
+      <form method="post" action="/mp/join" style="display:grid; gap:10px; margin-top:8px;">
+        <input name="code" placeholder="Kod pokoju (np. AB12)" required style="text-transform:uppercase;">
+        <input name="name" placeholder="Twoje imię" required>
+        <button class="btn" type="submit">Dołącz</button>
+      </form>
+
+      <div class="spacer"></div>
+
+      <div class="muted" style="font-size:12px;">
+        Tip: jeśli przycisk „Rzuć” jest zablokowany, to znaczy że nie jest Twoja tura albo nie dołączyłaś z lobby.
+      </div>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>
