@@ -22,40 +22,142 @@
   </nav>
 
   <div class="actions">
-    <button class="btn" id="rollBtn">🎲 Rzuć</button>
+    {# RZUĆ #}
+    <form action="/mp/room/{{ room.code }}/roll" method="post" style="display:inline;">
+      <button class="btn {% if not can_roll or room.pending %}disabled{% endif %}"
+              {% if not can_roll or room.pending %}disabled{% endif %}>
+        🎲 Rzuć
+      </button>
+    </form>
+
+    {# KARTA (tylko TELEPORT_PLUS3 ma przycisk) #}
+    {% set my_card = None %}
+    {% if my_idx is not none and room.players and my_idx < (room.players|length) %}
+      {% set my_card = room.players[my_idx].card %}
+    {% endif %}
+
+    {% if my_pid and (not room.pending) and (not room.winner) and my_card and my_card == "TELEPORT_PLUS3" and (room.turn|int == my_idx) %}
+      <form action="/mp/room/{{ room.code }}/use_card" method="post" style="display:inline;">
+        <button class="btn secondary">🃏 Użyj karty (TELEPORT +3)</button>
+      </form>
+    {% endif %}
+
     <a class="btn" href="/mp">🚪 Lobby</a>
   </div>
 </header>
 
 <div class="layout">
   <aside class="info card">
-    <div class="info-row"><b>Kod pokoju:</b> <span id="roomCode">{{ room.code }}</span></div>
-    <div class="info-row"><b>Twój ID:</b> <span id="myPid">{{ my_pid or "brak (wejdź z lobby)" }}</span></div>
-    <div class="info-row"><b>Runda:</b> <span id="roundNum">1</span></div>
-    <div class="info-row"><b>Ruch:</b> <span id="turnName">-</span></div>
+    <div class="info-row"><b>Kod pokoju:</b> {{ room.code }}</div>
+    <div class="info-row"><b>Twój ID:</b> {{ my_pid or "brak (wejdź z lobby)" }}</div>
+
+    {% set n_players = room.players|length %}
+    {% set mc = room.move_count|int %}
+    {% set round_num = 1 if mc == 0 else ((mc - 1) // n_players) + 1 %}
+
+    <div class="info-row"><b>Runda:</b> {{ round_num }}</div>
+    <div class="info-row">
+      <b>Ruch:</b>
+      {{ room.players[room.turn|int].name if room.players and room.turn is not none else "-" }}
+    </div>
 
     <div class="spacer"></div>
 
-    <ul class="positions" id="positionsList"></ul>
+    {% if room.message %}
+      <div class="card" style="padding:10px;">{{ room.message }}</div>
+    {% endif %}
 
     <div class="spacer"></div>
 
-    <div class="history" id="historyBox">
-      <div class="muted">Brak ruchów jeszcze.</div>
+    <div class="info-row">
+      <b>Twoja karta:</b>
+      {% if my_card %}
+        {{ my_card|replace("_"," ") }}
+      {% else %}
+        brak
+      {% endif %}
+    </div>
+
+    {% if my_card == "ANTY_WAZ" %}
+      <div class="muted" style="margin-top:6px;">
+        ANTY WĄŻ aktywuje się tylko, gdy staniesz na wężu (wtedy pojawi się decyzja).
+      </div>
+    {% endif %}
+
+    {# PENDING: decyzja na wężu (ANTY_WAZ) #}
+    {% if room.pending and room.pending.type == "snake_choice" %}
+      <div class="card" style="margin-top:12px; padding:12px;">
+        <b>🐍 Wąż! Decyzja:</b>
+        <div class="muted" style="margin-top:6px;">
+          Stoisz na <b>{{ room.pending.from }}</b>.
+          Normalnie spadasz na <b>{{ room.pending.to }}</b>.
+        </div>
+
+        {% if my_pid and room.pending.player_id == my_pid %}
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <form action="/mp/room/{{ room.code }}/snake_decision" method="post">
+              <input type="hidden" name="choice" value="stay">
+              <button class="btn">🃏 Zostań (ANTY WĄŻ)</button>
+            </form>
+
+            <form action="/mp/room/{{ room.code }}/snake_decision" method="post">
+              <input type="hidden" name="choice" value="back">
+              <button class="btn secondary">⬇ Cofnij się</button>
+            </form>
+          </div>
+        {% else %}
+          <div class="muted" style="margin-top:10px;">
+            Czekamy na decyzję gracza: {{ room.pending.player_id }}
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="spacer"></div>
+
+    <ul class="positions">
+      {% for p in room.players %}
+        <li>
+          <span class="dot {{ p.color }}"></span>
+          <span class="pname">{{ p.name }}{% if p.id == my_pid %} (Ty){% endif %}</span>
+          <span class="ppos">pole: <b>{{ p.pos }}</b></span>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <div class="spacer"></div>
+
+    <div class="history">
+      {% if room.history and room.history|length > 0 %}
+        <ul>
+          {% for h in room.history|reverse %}
+            <li>{{ h }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="muted">Brak ruchów jeszcze.</div>
+      {% endif %}
     </div>
   </aside>
 
   <main>
     <div class="board-wrapper">
 
-      <!-- START BOX -->
       <div class="start-box">
         <div class="start-title">START</div>
-        <div class="start-pawns" id="startPawns"></div>
+        <div class="start-pawns">
+          {% for p in room.players %}
+            {% if p.pos|int == 0 %}
+              <div class="pawn {{ p.color }}" title="{{ p.name }}"></div>
+            {% endif %}
+          {% endfor %}
+        </div>
       </div>
 
-      <!-- BOARD -->
       <div class="board" aria-label="Plansza 10 na 10">
+        {% set last_idx = room.last_player|int %}
+        {% set mt = room.magic_tiles if room.magic_tiles else {} %}
+
         {% for idx in range(100) %}
           {% set row = idx // 10 %}
           {% set col = idx % 10 %}
@@ -67,11 +169,18 @@
             {% set n = r*10 + (10 - col) %}
           {% endif %}
 
+          {# magic_tiles klucze w JSON są stringami #}
+          {% set key = n|string %}
+          {% set mt_state = mt.get(key) %}
+
           <div class="cell
+            {% if (key in mt) and (mt_state != "USED") %} magic {% endif %}
             {% if n in snakes_ladders %}
               {% if snakes_ladders[n] > n %} ladder {% else %} snake {% endif %}
             {% endif %}
+            {% if room.players and (room.players[last_idx].pos|int == n) and (n > 0) %} highlight {% endif %}
           " data-n="{{ n }}">
+
             <span class="number">{{ n }}</span>
 
             {% if n in snakes_ladders %}
@@ -82,6 +191,14 @@
               {% endif %}
               <div class="target">{{ snakes_ladders[n] }}</div>
             {% endif %}
+
+            {# pionki: slotowanie #}
+            {% for pl in room.players %}
+              {% if pl.pos|int == n and n > 0 %}
+                <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}" title="{{ pl.name }}"></div>
+              {% endif %}
+            {% endfor %}
+
           </div>
         {% endfor %}
       </div>
@@ -92,118 +209,47 @@
 
 <script>
 const code = "{{ room.code }}";
-const myPid = "{{ my_pid or '' }}";
 
-function calcRound(moveCount, nPlayers){
-  if (!moveCount || moveCount === 0) return 1;
-  return Math.floor((moveCount - 1) / nPlayers) + 1;
+// JS tylko do przeładowania strony, gdy coś się zmieni
+function sig(st){
+  return [
+    st.move_count ?? 0,
+    st.turn ?? 0,
+    st.last_player ?? 0,
+    st.last_roll ?? "",
+    st.winner ?? "",
+    JSON.stringify(st.pending ?? null),
+    (st.message ?? ""),
+    JSON.stringify(st.magic_tiles ?? null)
+  ].join("|");
 }
 
-function clearPawns(){
-  document.querySelectorAll(".board .pawn").forEach(p => p.remove());
-  document.getElementById("startPawns").innerHTML = "";
-  document.querySelectorAll(".cell").forEach(c => c.classList.remove("highlight"));
-}
+let lastSig = null;
 
-function render(room){
-  const players = room.players || [];
-  const turn = room.turn ?? 0;
-  const lastPlayer = room.last_player ?? 0;
-  const winner = room.winner;
+async function poll(){
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 1200);
 
-  // Runda + tura
-  document.getElementById("roundNum").textContent = calcRound(room.move_count || 0, players.length);
-  document.getElementById("turnName").textContent = players[turn] ? players[turn].name : "-";
-
-  // Lista pozycji
-  const ul = document.getElementById("positionsList");
-  ul.innerHTML = players.map(p => `
-    <li>
-      <span class="dot ${p.color}"></span>
-      <span class="pname">${p.name}${p.id===myPid ? " (Ty)" : ""}</span>
-      <span class="ppos">pole: <b>${p.pos}</b></span>
-    </li>
-  `).join("");
-
-  // Historia
-  const hb = document.getElementById("historyBox");
-  const hist = room.history || [];
-  if (hist.length > 0){
-    hb.innerHTML = "<ul>" + hist.slice().reverse().map(h => `<li>${h}</li>`).join("") + "</ul>";
-  } else {
-    hb.innerHTML = `<div class="muted">Brak ruchów jeszcze.</div>`;
-  }
-
-  // Pionki
-  clearPawns();
-
-  // Start
-  const start = document.getElementById("startPawns");
-  players.forEach(p => {
-    if (Number(p.pos) === 0){
-      const d = document.createElement("div");
-      d.className = `pawn ${p.color}`;
-      d.title = p.name;
-      start.appendChild(d);
-    }
-  });
-
-  // Plansza (slotowanie jak u Ciebie)
-  players.forEach((p, i) => {
-    const pos = Number(p.pos);
-    if (pos > 0){
-      const cell = document.querySelector(`.cell[data-n="${pos}"]`);
-      if (cell){
-        const d = document.createElement("div");
-        d.className = `pawn ${p.color} slot-${i}`;
-        d.title = p.name;
-        cell.appendChild(d);
-      }
-    }
-  });
-
-  // Highlight ostatniego ruchu
-  const lastPos = players[lastPlayer] ? Number(players[lastPlayer].pos) : 0;
-  if (lastPos > 0){
-    const hl = document.querySelector(`.cell[data-n="${lastPos}"]`);
-    if (hl) hl.classList.add("highlight");
-  }
-
-  // Przycisk Rzuć (Twoja tura + min 2 graczy + brak zwycięzcy)
-  const turnPlayer = players[turn];
-  const canRoll = (!winner && players.length >= 2 && myPid && turnPlayer && turnPlayer.id === myPid);
-  document.getElementById("rollBtn").disabled = !canRoll;
-}
-
-async function fetchState(){
-  const r = await fetch(`/mp/room/${code}/state`, {cache: "no-store"});
-  return await r.json();
-}
-
-async function loop(){
   try{
-    const st = await fetchState();
-    render(st);
-  } catch(e) {}
-  setTimeout(loop, 800); // 0.8s i jest płynnie bez mrugania
+    const r = await fetch(`/mp/room/${code}/state`, {cache:"no-store", signal: controller.signal});
+    const st = await r.json();
+    const s = sig(st);
+
+    if (lastSig === null) lastSig = s;
+    else if (s !== lastSig){
+      location.reload();
+      return;
+    }
+  } catch(e) {
+    // chwilowe przerwy ignorujemy
+  } finally {
+    clearTimeout(t);
+  }
+
+  setTimeout(poll, 1500);
 }
 
-document.getElementById("rollBtn").addEventListener("click", async () => {
-  const r = await fetch(`/mp/room/${code}/roll`, {method: "POST"});
-  let data = {};
-  try { data = await r.json(); } catch(e) {}
-  if (!r.ok){
-    alert("Nie można wykonać ruchu: " + (data.error || r.status) +
-          " | idx=" + (data.idx ?? "?") + " turn=" + (data.turn ?? "?"));
-    return;
-  } else {
-    // od razu pobierz nowy stan
-    const st = await fetchState();
-    render(st);
-  }
-});
-
-loop();
+poll();
 </script>
 
 </body>

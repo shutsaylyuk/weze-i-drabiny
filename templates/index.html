@@ -12,11 +12,11 @@
 <header class="app-header">
   <div class="brand">
     <div class="title">Węże i drabiny</div>
-      {% if mode == 'ai' %}
-   <div class="subtitle">Ty vs Komputer</div>
-{% else %}
-   <div class="subtitle">Hot-seat • {{ players|length }} graczy</div>
-{% endif %}
+    {% if mode == 'ai' %}
+      <div class="subtitle">Ty vs Komputer</div>
+    {% else %}
+      <div class="subtitle">Hot-seat • {{ players|length }} graczy</div>
+    {% endif %}
   </div>
 
   <nav class="tabs" aria-label="Tryby gry">
@@ -26,38 +26,48 @@
   </nav>
 
   <div class="actions">
-    {% set bot_turn = (mode == 'ai' and players[turn].is_bot) %}
+    {% set bot_turn = (mode == 'ai' and players[turn].get('is_bot')) %}
+    {% set pending_active = (pending is not none) %}
 
-{% if won or bot_turn %}
-  <a class="btn disabled" href="#" aria-disabled="true">🎲 Rzuć</a>
-{% else %}
-  <a class="btn" href="/roll">🎲 Rzuć</a>
-{% endif %}
+    {% if won or bot_turn or pending_active %}
+      <a class="btn disabled" href="#" aria-disabled="true" title="{% if pending_active %}Najpierw podejmij decyzję na wężu{% endif %}">🎲 Rzuć</a>
+    {% else %}
+      <a class="btn" href="/roll">🎲 Rzuć</a>
+    {% endif %}
+
     {% if mode == 'ai' %}
-  <a class="btn" href="/new?mode=ai">🔄 Nowa gra</a>
-{% else %}
-  <a class="btn" href="/new?mode=hotseat&players={{ players|length }}">🔄 Nowa gra</a>
-{% endif %}
+      <a class="btn" href="/new?mode=ai">🔄 Nowa gra</a>
+    {% else %}
+      <a class="btn" href="/new?mode=hotseat&players={{ players|length }}">🔄 Nowa gra</a>
+    {% endif %}
     <a class="btn secondary" href="/howto">📘 Instrukcja</a>
   </div>
 </header>
 
 <div class="layout">
   <aside class="info card">
-  <div class="info-row"><b>Runda:</b> {{ round }}</div>
+    <div class="info-row"><b>Runda:</b> {{ round }}</div>
     <div class="info-row"><b>Ruch:</b> {{ players[turn].name }}</div>
+
+    {% if message %}
+      <div class="spacer"></div>
+      <div class="card" style="padding:10px;">
+        {{ message }}
+      </div>
+    {% endif %}
 
     <div class="spacer"></div>
 
-      <div class="spacer"></div>
     {% if mode != 'ai' %}
-    <div class="info-row"><b>Liczba graczy:</b></div>
-    <div class="player-count">
-      <a class="btn" href="/new?players=2">2</a>
-      <a class="btn" href="/new?players=3">3</a>
-      <a class="btn" href="/new?players=4">4</a>
-    </div>
+      <div class="info-row"><b>Liczba graczy:</b></div>
+      <div class="player-count">
+        <a class="btn" href="/new?mode=hotseat&players=2">2</a>
+        <a class="btn" href="/new?mode=hotseat&players=3">3</a>
+        <a class="btn" href="/new?mode=hotseat&players=4">4</a>
+      </div>
+      <div class="spacer"></div>
     {% endif %}
+
     <ul class="positions">
       {% for p in players %}
         <li>
@@ -68,44 +78,80 @@
       {% endfor %}
     </ul>
 
-  <div class="spacer"></div>
-<div class="info-row"><b>Kolory pionków:</b></div>
+    <!-- ====== KARTY (HOTSEAT/AI) ====== -->
+    <div class="spacer"></div>
+    <div class="info-row"><b>Karta aktualnego gracza:</b></div>
+    <div class="muted">
+      {{ players[turn].name }} ma:
+      <b>{{ players[turn].card if players[turn].card else "brak" }}</b>
+    </div>
 
-<form class="colors-form" action="/set_colors" method="post">
-  {% for p in players %}
-      {% if mode != 'ai' or not p.is_bot %}
-        <label class="color-row">
-          <span class="dot {{ p.color }}"></span>
-          <span class="pname">{{ p.name }}</span>
-
-          <select name="color_{{ loop.index0 }}">
-            <option value="p-red"    {% if p.color == "p-red" %}selected{% endif %}>Czerwony</option>
-            <option value="p-blue"   {% if p.color == "p-blue" %}selected{% endif %}>Niebieski</option>
-            <option value="p-green"  {% if p.color == "p-green" %}selected{% endif %}>Zielony</option>
-            <option value="p-purple" {% if p.color == "p-purple" %}selected{% endif %}>Fioletowy</option>
-          </select>
-        </label>
+    {# Użycie kart: tylko jeśli NIE ma pending i NIE jest to bot turn i NIE ma wygranej #}
+    {% if (players[turn].card) and (not pending) and (not won) and (not bot_turn) %}
+      {% if players[turn].card != "ANTY_WAZ" %}
+        <form action="/use_card" method="post" style="margin-top:8px;">
+          <button class="btn" type="submit">🃏 Użyj karty</button>
+        </form>
+      {% else %}
+        <div class="muted" style="margin-top:6px;">
+          (ANTY WĄŻ aktywuje się tylko, gdy staniesz na wężu)
+        </div>
       {% endif %}
-  {% endfor %}
+    {% endif %}
 
-  <button class="btn" type="submit">Zapisz kolory</button>
-</form>
-  <div class="history">
-  {% if history and history|length > 0 %}
-    <ul>
-      {% for h in history|reverse %}
-        <li>{{ h }}</li>
+    {# Panel decyzji na wężu (pending) #}
+    {% if pending and pending.get("type") == "snake_choice" %}
+      <div class="card" style="margin-top:12px; padding:12px;">
+        <b>🐍 Wąż! Decyzja:</b>
+        <div class="muted" style="margin-top:6px;">
+          Stoisz na <b>{{ pending.get("from") }}</b>.
+          Normalnie spadasz na <b>{{ pending.get("to") }}</b>.
+        </div>
+
+        <form action="/snake_decision" method="post" style="display:flex; gap:8px; margin-top:10px;">
+          <button class="btn" name="choice" value="stay">🃏 Zostań (ANTY WĄŻ)</button>
+          <button class="btn secondary" name="choice" value="back">⬇ Cofnij się</button>
+        </form>
+      </div>
+    {% endif %}
+
+    <!-- ====== KOLORY PIONKÓW ====== -->
+    <div class="spacer"></div>
+    <div class="info-row"><b>Kolory pionków:</b></div>
+
+    <form class="colors-form" action="/set_colors" method="post">
+      {% for p in players %}
+        {% if mode != 'ai' or not p.get('is_bot') %}
+          <label class="color-row">
+            <span class="dot {{ p.color }}"></span>
+            <span class="pname">{{ p.name }}</span>
+
+            <select name="color_{{ loop.index0 }}">
+              <option value="p-red"    {% if p.color == "p-red" %}selected{% endif %}>Czerwony</option>
+              <option value="p-blue"   {% if p.color == "p-blue" %}selected{% endif %}>Niebieski</option>
+              <option value="p-green"  {% if p.color == "p-green" %}selected{% endif %}>Zielony</option>
+              <option value="p-purple" {% if p.color == "p-purple" %}selected{% endif %}>Fioletowy</option>
+            </select>
+          </label>
+        {% endif %}
       {% endfor %}
-    </ul>
-  {% else %}
-    <div class="muted">Brak ruchów jeszcze.</div>
-  {% endif %}
-</div>
 
+      <button class="btn" type="submit">Zapisz kolory</button>
+    </form>
 
-
+    <!-- ====== HISTORIA ====== -->
+    <div class="history">
+      {% if history and history|length > 0 %}
+        <ul>
+          {% for h in history|reverse %}
+            <li>{{ h }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="muted">Brak ruchów jeszcze.</div>
+      {% endif %}
+    </div>
   </aside>
-
 
   <main>
     <div class="board-wrapper">
@@ -136,6 +182,7 @@
           {% endif %}
 
           <div class="cell
+            {% if n in magic_tiles %} magic {%  endif %}
             {% if n in snakes_ladders %}
               {% if snakes_ladders[n] > n %} ladder {% else %} snake {% endif %}
             {% endif %}
@@ -162,22 +209,17 @@
         {% endfor %}
       </div>
 
-
     </div>
   </main>
 </div>
 
-
-
-{% if mode == 'ai' and players[turn].is_bot and not won %}
+{% if mode == 'ai' and players[turn].get('is_bot') and not won %}
 <script>
-    setTimeout(function(){
-        window.location.href = "/ai_move";
-    }, 1000);  // 1.2 sekundy przerwy
+  setTimeout(function(){
+    window.location.href = "/ai_move";
+  }, 1000);
 </script>
 {% endif %}
-
-
 
 </body>
 </html>
