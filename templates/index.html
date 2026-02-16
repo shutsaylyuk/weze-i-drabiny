@@ -162,7 +162,7 @@
         <div class="start-pawns">
           {% for p in players %}
             {% if p.pos|int == 0 %}
-              <div class="pawn {{ p.color }}" title="{{ p.name }}"></div>
+              <div class="pawn {{ p.color }}" data-player="{{ loop.index0 }}" title="{{ p.name }}"></div>
             {% endif %}
           {% endfor %}
         </div>
@@ -182,12 +182,13 @@
           {% endif %}
 
           <div class="cell
-            {% if n in magic_tiles %} magic {%  endif %}
-            {% if n in snakes_ladders %}
-              {% if snakes_ladders[n] > n %} ladder {% else %} snake {% endif %}
-            {% endif %}
-            {% if n == players[last_player].pos|int and players[last_player].pos|int > 0 %} highlight {% endif %}
-          ">
+              {% if n in magic_tiles %} magic {%  endif %}
+              {% if n in snakes_ladders %}
+                {% if snakes_ladders[n] > n %} ladder {% else %} snake {% endif %}
+              {% endif %}
+              {% if n == players[last_player].pos|int and players[last_player].pos|int > 0 %} highlight {% endif %}
+            " data-n="{{ n }}">
+
             <span class="number">{{ n }}</span>
 
             {% if n in snakes_ladders %}
@@ -202,7 +203,7 @@
             {# Pionki – slotowanie, żeby nie nachodziły #}
             {% for pl in players %}
               {% if pl.pos|int == n and pl.pos|int > 0 %}
-                <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}" title="{{ pl.name }}"></div>
+                <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}" data-player="{{ loop.index0 }}" title="{{ pl.name }}"></div>
               {% endif %}
             {% endfor %}
           </div>
@@ -215,11 +216,107 @@
 
 {% if mode == 'ai' and players[turn].get('is_bot') and not won %}
 <script>
-  setTimeout(function(){
-    window.location.href = "/ai_move";
-  }, 1000);
+  // ile trwa animacja? (kroki * 220ms + mały zapas)
+  function estimateAnimMs(lastMove){
+    if(!lastMove) return 0;
+    const from = lastMove.from ?? 0;
+    const land = lastMove.land ?? lastMove.to ?? from;
+    const to   = lastMove.to ?? land;
+
+    const steps = Math.max(0, land - Math.max(0, from)) + (to !== land ? 1 : 0);
+    return steps * 220 + 350;
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const lastMove = {{ (last_move|tojson) if last_move else "null" }};
+    const wait = estimateAnimMs(lastMove);
+
+    setTimeout(() => {
+      window.location.href = "/ai_move";
+    }, Math.max(600, wait)); // min 600ms, albo czas animacji
+  });
 </script>
 {% endif %}
+
+<script>
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  function cellEl(n){
+    return document.querySelector(`.cell[data-n="${n}"]`);
+  }
+  function pawnEl(playerIndex){
+    return document.querySelector(`.pawn[data-player="${playerIndex}"]`);
+  }
+  function startBoxEl(){
+    return document.querySelector(".start-box .start-pawns");
+  }
+
+  async function stepWalk(pawn, fromPos, toPos, stepDelay=220){
+    const start = Math.max(1, fromPos + 1);
+    for(let p = start; p <= toPos; p++){
+      const cell = cellEl(p);
+      if(!cell) break;
+
+      document.querySelectorAll('.cell.step').forEach(x => x.classList.remove('step'));
+      cell.classList.add('step');
+
+      cell.appendChild(pawn);
+      await sleep(stepDelay);
+    }
+    document.querySelectorAll('.cell.step').forEach(x => x.classList.remove('step'));
+  }
+
+  async function animateMove2Phase(playerIndex, fromPos, landPos, toPos){
+    const pawn = pawnEl(playerIndex);
+    if(!pawn) return;
+
+    // ustaw pionek na start animacji
+    if(fromPos <= 0){
+      const sb = startBoxEl();
+      if(sb) sb.appendChild(pawn);
+    } else {
+      const fromCell = cellEl(fromPos);
+      if(fromCell) fromCell.appendChild(pawn);
+    }
+
+    // FAZA 1: dojście na land (po rzucie)
+    if(landPos && landPos > fromPos){
+      await stepWalk(pawn, fromPos, landPos, 220);
+    }
+
+    // FAZA 2: jeśli wąż/drabina, to skok/teleport
+    if(toPos && landPos && toPos !== landPos){
+      const toCell = cellEl(toPos);
+      if(toCell){
+        // krótki “blink” / podświetlenie pola docelowego
+        toCell.classList.add("step");
+        await sleep(120);
+        toCell.appendChild(pawn);
+        await sleep(220);
+        toCell.classList.remove("step");
+      }
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    const lastMove = {{ (last_move|tojson) if last_move else "null" }};
+    if(!lastMove) return;
+
+    // zabezpieczenie przed ponowną animacją po odświeżeniu
+    const key = `anim_${lastMove.move_count || ""}_${lastMove.player}_${lastMove.from}_${lastMove.land}_${lastMove.to}`;
+    if(sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+
+    const from = lastMove.from ?? 0;
+    const land = lastMove.land ?? lastMove.to;
+    const to   = lastMove.to ?? land;
+
+    await animateMove2Phase(lastMove.player, from, land, to);
+  });
+</script>
+
+
+
 
 </body>
 </html>

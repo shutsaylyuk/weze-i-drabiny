@@ -11,7 +11,7 @@
 <header class="app-header">
   <div class="brand">
     <div class="title">Węże i drabiny</div>
-    <div class="subtitle">Instrukcja</div>
+    <div class="subtitle">Instrukcja gry</div>
   </div>
 
   <div></div>
@@ -29,21 +29,72 @@
     <ul>
       <li><b>Hot-seat</b> – kilku graczy gra na zmianę przy jednym komputerze.</li>
       <li><b>Vs komputer</b> – grasz przeciwko botowi wykonującemu automatyczne ruchy.</li>
-      <li><b>Multiplayer</b> – tryb rozgrywki przez sieć (w przygotowaniu).</li>
+      <li><b>Multiplayer</b> – rozgrywka online w prywatnym pokoju z unikalnym kodem.</li>
     </ul>
   </section>
 
-  <!-- ZASADY GRY -->
+  <!-- PODSTAWOWE ZASADY -->
   <section class="howto-section">
-    <h2>Zasady gry</h2>
+    <h2>Podstawowe zasady</h2>
     <ol>
-      <li>Gra toczy się na planszy numerowanej od 1 do 100.</li>
-      <li>Kolejno rzucacie kostką i przesuwacie pionek o wyrzuconą liczbę oczek.</li>
+      <li>Gra toczy się na planszy z polami od <b>1 do 100</b>.</li>
+      <li>Gracze wykonują ruchy naprzemiennie, rzucając kostką.</li>
+      <li>Pionek przesuwa się o liczbę wyrzuconych oczek.</li>
+      <li>Aby wygrać, musisz wejść <b>dokładnie na pole 100</b>.
+          Jeśli wyrzucisz za dużo – ruch nie zostaje wykonany.</li>
+      <li>Jeśli wyrzucisz <b>6</b>, otrzymujesz dodatkowy rzut.</li>
+      <li>Jeżeli wyrzucisz <b>6 trzy razy z rzędu</b>, Twoja tura zostaje anulowana.</li>
+    </ol>
+  </section>
+
+  <!-- WĘŻE I DRABINY -->
+  <section class="howto-section">
+    <h2>Węże i drabiny</h2>
+    <ul>
       <li>🪜 <b>Drabina</b> przenosi Cię na wyższe pole.</li>
       <li>🐍 <b>Wąż</b> zsuwa Cię na niższe pole.</li>
-      <li>Aby wygrać, musisz wejść dokładnie na pole <b>100</b> (jeśli wyrzucisz za dużo – ruch przepada).</li>
-      <li><b>Bonus:</b> jeśli wyrzucisz <b>6</b>, otrzymujesz dodatkowy rzut.</li>
-    </ol>
+      <li>Jeśli posiadasz kartę <b>ANTY WĄŻ</b>, możesz zdecydować, czy:
+        <ul>
+          <li>zostać na obecnym polu,</li>
+          <li>czy cofnąć się zgodnie z zasadą węża.</li>
+        </ul>
+      </li>
+    </ul>
+  </section>
+
+  <!-- POLA SPECJALNE -->
+  <section class="howto-section">
+    <h2>Pola specjalne</h2>
+    <ul>
+      <li>🟡 <b>Pola magiczne</b> to specjalne pola, na których możesz zdobyć losową kartę.</li>
+      <li>Każde pole magiczne jest <b>jednorazowe</b>:
+        <ul>
+          <li>pierwszy gracz, który na nie wejdzie, otrzymuje kartę,</li>
+          <li>po wykorzystaniu pole staje się „zużyte” i <b>kolejni gracze nie dostają już z niego karty</b>.</li>
+        </ul>
+      </li>
+      <li>Pole magiczne działa tylko wtedy, gdy <b>zatrzymasz się</b> na nim w wyniku ruchu (rzutu kostką lub karty).</li>
+    </ul>
+  </section>
+
+  <!-- KARTY -->
+  <section class="howto-section">
+    <h2>Karty specjalne</h2>
+    <ul>
+      <li>Gracz może mieć <b>jednocześnie tylko 1 kartę</b>.
+        Jeśli zdobędziesz nową kartę, gdy masz już inną — <b>obecna karta zostaje zastąpiona</b> (nowa nadpisuje starą).</li>
+
+      <li>🃏 <b>TELEPORT +3</b> – przesuwasz się o 3 pola do przodu.
+        Zasada <b>dokładnie 100</b> nadal obowiązuje (jeśli ruch przekroczyłby 100, karta nie może zostać użyta).</li>
+
+      <li>🛡 <b>ANTY WĄŻ</b> – działa tylko, gdy wejdziesz na pole z wężem.
+        Wtedy pojawia się decyzja:
+        <ul>
+          <li><b>Zostań</b> – unikasz cofnięcia (karta zostaje zużyta),</li>
+          <li><b>Cofnij się</b> – wykonujesz standardowy ruch węża.</li>
+        </ul>
+      </li>
+    </ul>
   </section>
 
   <div class="howto-footer">
@@ -52,3 +103,4 @@
 
 </main>
 </body>
+</html>

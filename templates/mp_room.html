@@ -22,7 +22,6 @@
   </nav>
 
   <div class="actions">
-    {# RZUĆ #}
     <form action="/mp/room/{{ room.code }}/roll" method="post" style="display:inline;">
       <button class="btn {% if not can_roll or room.pending %}disabled{% endif %}"
               {% if not can_roll or room.pending %}disabled{% endif %}>
@@ -30,7 +29,6 @@
       </button>
     </form>
 
-    {# KARTA (tylko TELEPORT_PLUS3 ma przycisk) #}
     {% set my_card = None %}
     {% if my_idx is not none and room.players and my_idx < (room.players|length) %}
       {% set my_card = room.players[my_idx].card %}
@@ -61,10 +59,12 @@
       {{ room.players[room.turn|int].name if room.players and room.turn is not none else "-" }}
     </div>
 
+    <div id="anim-status" class="muted" style="margin-top:6px;"></div>
+
     <div class="spacer"></div>
 
     {% if room.message %}
-      <div class="card" style="padding:10px;">{{ room.message }}</div>
+      <div id="msgBox" class="card" style="padding:10px;">{{ room.message }}</div>
     {% endif %}
 
     <div class="spacer"></div>
@@ -84,7 +84,6 @@
       </div>
     {% endif %}
 
-    {# PENDING: decyzja na wężu (ANTY_WAZ) #}
     {% if room.pending and room.pending.type == "snake_choice" %}
       <div class="card" style="margin-top:12px; padding:12px;">
         <b>🐍 Wąż! Decyzja:</b>
@@ -115,7 +114,7 @@
 
     <div class="spacer"></div>
 
-    <ul class="positions">
+    <ul class="positions" id="posList">
       {% for p in room.players %}
         <li>
           <span class="dot {{ p.color }}"></span>
@@ -143,17 +142,20 @@
   <main>
     <div class="board-wrapper">
 
+      <!-- START -->
       <div class="start-box">
         <div class="start-title">START</div>
         <div class="start-pawns">
           {% for p in room.players %}
             {% if p.pos|int == 0 %}
-              <div class="pawn {{ p.color }}" title="{{ p.name }}"></div>
+              <!-- kluczowe dla animacji -->
+              <div class="pawn {{ p.color }}" data-player="{{ loop.index0 }}" title="{{ p.name }}"></div>
             {% endif %}
           {% endfor %}
         </div>
       </div>
 
+      <!-- BOARD -->
       <div class="board" aria-label="Plansza 10 na 10">
         {% set last_idx = room.last_player|int %}
         {% set mt = room.magic_tiles if room.magic_tiles else {} %}
@@ -169,7 +171,6 @@
             {% set n = r*10 + (10 - col) %}
           {% endif %}
 
-          {# magic_tiles klucze w JSON są stringami #}
           {% set key = n|string %}
           {% set mt_state = mt.get(key) %}
 
@@ -192,10 +193,12 @@
               <div class="target">{{ snakes_ladders[n] }}</div>
             {% endif %}
 
-            {# pionki: slotowanie #}
+            <!-- pionki na planszy -->
             {% for pl in room.players %}
               {% if pl.pos|int == n and n > 0 %}
-                <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}" title="{{ pl.name }}"></div>
+                <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}"
+                     data-player="{{ loop.index0 }}"
+                     title="{{ pl.name }}"></div>
               {% endif %}
             {% endfor %}
 
@@ -208,48 +211,121 @@
 </div>
 
 <script>
-const code = "{{ room.code }}";
+  // ===== Animacja (2 fazy) =====
+  let lastSeenMoveCount = {{ room.move_count|int }};
+  let inFlight = false;
+  let isAnimating = false;
 
-// JS tylko do przeładowania strony, gdy coś się zmieni
-function sig(st){
-  return [
-    st.move_count ?? 0,
-    st.turn ?? 0,
-    st.last_player ?? 0,
-    st.last_roll ?? "",
-    st.winner ?? "",
-    JSON.stringify(st.pending ?? null),
-    (st.message ?? ""),
-    JSON.stringify(st.magic_tiles ?? null)
-  ].join("|");
-}
+  const statusEl = document.getElementById("anim-status");
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-let lastSig = null;
+  function setStatus(t){ if(statusEl) statusEl.textContent = t || ""; }
 
-async function poll(){
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 1200);
+  function cellEl(n){ return document.querySelector(`.cell[data-n="${n}"]`); }
+  function pawnEl(playerIndex){ return document.querySelector(`.pawn[data-player="${playerIndex}"]`); }
+  function startBoxEl(){ return document.querySelector(".start-box .start-pawns"); }
 
-  try{
-    const r = await fetch(`/mp/room/${code}/state`, {cache:"no-store", signal: controller.signal});
-    const st = await r.json();
-    const s = sig(st);
+  async function stepWalk(pawn, fromPos, toPos, stepDelay=260){
+    const start = Math.max(1, fromPos + 1);
+    const total = Math.max(0, toPos - Math.max(0, fromPos));
 
-    if (lastSig === null) lastSig = s;
-    else if (s !== lastSig){
-      location.reload();
-      return;
+    for(let p = start; p <= toPos; p++){
+      const cell = cellEl(p);
+      if(!cell) break;
+
+      const done = p - Math.max(0, fromPos);
+      setStatus(`Przechodzę: ${done}/${total}`);
+
+      cell.appendChild(pawn);
+      await sleep(stepDelay);
     }
-  } catch(e) {
-    // chwilowe przerwy ignorujemy
-  } finally {
-    clearTimeout(t);
+    setStatus("");
   }
 
-  setTimeout(poll, 1500);
-}
+  async function animateMove2Phase(playerIndex, fromPos, landPos, toPos){
+    const pawn = pawnEl(playerIndex);
+    if(!pawn) return;
 
-poll();
+    isAnimating = true;
+
+    // ustaw pionek na from (żeby nie było teleportu)
+    if(fromPos <= 0){
+      const sb = startBoxEl(); if(sb) sb.appendChild(pawn);
+    } else {
+      const fc = cellEl(fromPos); if(fc) fc.appendChild(pawn);
+    }
+
+    // faza 1: dojście na land
+    if(landPos > fromPos){
+      await stepWalk(pawn, fromPos, landPos, 260);
+    }
+
+    // faza 2: skok wąż/drabina/teleport
+    if(toPos !== landPos){
+      setStatus("Skok...");
+      const tc = cellEl(toPos);
+      if(tc){
+        await sleep(140);
+        tc.appendChild(pawn);
+        await sleep(220);
+      }
+      setStatus("");
+    }
+
+    isAnimating = false;
+  }
+
+  // Animacja po wejściu (po redirect)
+  document.addEventListener("DOMContentLoaded", async () => {
+    const lastMove = {{ (room.last_move|tojson) if room.last_move else "null" }};
+    if(!lastMove || !lastMove.move_count) return;
+
+    // zabezpieczenie: nie animuj tego samego po refreshu
+    const key = `mp_anim_${lastMove.move_count}_${lastMove.player}_${lastMove.from}_${lastMove.land}_${lastMove.to}`;
+    if(sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+
+    lastSeenMoveCount = lastMove.move_count;
+
+    await animateMove2Phase(
+      lastMove.player,
+      lastMove.from ?? 0,
+      (lastMove.land ?? lastMove.to ?? 0),
+      (lastMove.to ?? lastMove.land ?? 0)
+    );
+  });
+
+  // Polling dla innych graczy
+  async function poll(){
+    if(inFlight) return;
+    inFlight = true;
+
+    try{
+      const r = await fetch(`/mp/room/{{ room.code }}/state`, { cache: "no-store" });
+      const data = await r.json(); // data = cały room
+
+      const mc = Number(data.move_count || 0);
+
+      // ✅ Gdy ktoś wykonał ruch -> natychmiast odśwież stronę
+      // (to daje efekt "od razu się aktualizuje")
+      if(mc > lastSeenMoveCount){
+        lastSeenMoveCount = mc;
+
+        // opcjonalnie: jeśli wolisz NIE przerywać animacji, odkomentuj if
+        // if(isAnimating) return;
+
+        window.location.reload();
+        return;
+      }
+    } catch(e){
+      // cicho
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  // ✅ szybciej niż 1s
+  setInterval(poll, 250);
 </script>
 
 </body>

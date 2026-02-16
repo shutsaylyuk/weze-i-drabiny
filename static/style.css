@@ -5,6 +5,15 @@
   --card: #ffffff;
   --border: #dddddd;
   --text: #111111;
+
+  /* NEW: skala całej gry (symuluje ~80% bez zoomu) */
+  --ui-scale: 0.88;
+
+  /* NEW: docelowy rozmiar planszy w px (mniejszy niż 720) */
+  --board-max: 640px;
+
+  /* NEW: odstępy */
+  --gap: 16px;
 }
 
 *{ box-sizing: border-box; }
@@ -16,8 +25,6 @@ body{
   margin: 0;
   color: var(--text);
 }
-
-h1,h2,h3{ margin: 0 0 8px 0; }
 
 /* ===== HEADER (STICKY) ===== */
 
@@ -115,14 +122,16 @@ h1,h2,h3{ margin: 0 0 8px 0; }
 .layout{
   display: grid;
   grid-template-columns: 320px 1fr;
-  gap: 16px;
+  gap: var(--gap);
   align-items: start;
 }
+
+/* U Ciebie main jest w środku .layout */
 .layout > main{
   display: flex;
   justify-content: center;
+  min-width: 0;
 }
-
 
 /* ===== CARD ===== */
 
@@ -192,6 +201,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   font-weight: 700;
   font-size: 12px;
 }
+
 .history{
   margin-top: 8px;
   max-height: 180px;
@@ -229,7 +239,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
 .board-wrapper{
   display: grid;
   grid-template-columns: 240px max-content 240px;
-  gap: 16px;
+  gap: var(--gap);
   align-items: start;
 }
 
@@ -257,7 +267,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   margin-top: 10px;
 }
 
-/* START pawn: kółko z literą */
+/* START pawn */
 .start-box .pawn{
   position: relative;
   width: 30px;
@@ -292,22 +302,36 @@ h1,h2,h3{ margin: 0 0 8px 0; }
     0 4px 6px rgba(0,0,0,0.4);
 }
 
-/* BOARD po prawej, zajmuje wysokość obok START+LEGEND */
+/* ===== BOARD ===== */
+/* Najważniejsze: zmniejszamy rozmiar bez zoomu przeglądarki.
+   Skala działa na cały wrapper, żeby nie psuć układu gridów. */
+
 .board{
   grid-column: 2;
   grid-row: 1;
-  width: min(92vw, 720px);
+
+  /* bazowy rozmiar planszy */
+  width: min(82vw, 600px);
   aspect-ratio: 1 / 1;
+
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   grid-template-rows: repeat(10, 1fr);
   gap: 0;
+
   border: 2px solid #111;
   background: #fff;
+
+
 }
 
+/* Żeby po scale nie robiło dziwnych przesunięć, dajemy miejsce */
+.board-wrapper{
+  /* dodajemy trochę luzu, bo board jest skalowany */
+  padding-bottom: 6px;
+}
 
-/* LEGEND po lewej pod start */
+/* LEGEND po prawej */
 .legend{
   grid-column: 3;
   grid-row: 1;
@@ -323,11 +347,12 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   overflow: hidden;
 }
 
+/* fonty nie oparte o vw (bo vw przy zoomach i małych oknach robi chaos) */
 .number{
   position: absolute;
   top: 6%;
   left: 6%;
-  font-size: clamp(10px, 1.6vw, 14px);
+  font-size: 12px;
   font-weight: 700;
   opacity: 0.75;
 }
@@ -337,7 +362,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   top: 42%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: clamp(18px, 3.6vw, 34px);
+  font-size: 26px;
   line-height: 1;
 }
 
@@ -346,7 +371,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   left: 50%;
   bottom: 6px;
   transform: translateX(-50%);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 900;
   padding: 2px 10px;
   background: #fff;
@@ -365,11 +390,10 @@ h1,h2,h3{ margin: 0 0 8px 0; }
 
 /* ===== PAWNS ON BOARD (PIN) ===== */
 
-/* pionek na planszy to "pin", więc absolutne pozycjonowanie */
 .cell .pawn{
   position: absolute;
-  width: clamp(22px, 3.2vw, 36px);
-  height: clamp(28px, 4vw, 48px);
+  width: 28px;
+  height: 38px;
   z-index: 5;
 }
 
@@ -379,7 +403,6 @@ h1,h2,h3{ margin: 0 0 8px 0; }
 .cell .slot-2{ left: 8%;  top: 8%; }
 .cell .slot-3{ right: 8%; top: 8%; }
 
-/* Head */
 .cell .pawn::before{
   content: "";
   position: absolute;
@@ -393,7 +416,6 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
-/* Body */
 .cell .pawn::after{
   content: "";
   position: absolute;
@@ -409,14 +431,13 @@ h1,h2,h3{ margin: 0 0 8px 0; }
     0 4px 6px rgba(0,0,0,0.4);
 }
 
-/* Pawn colors — używaj tych klas w Pythonie/HTML: p-red, p-blue itd. */
+/* Pawn colors */
 .p-red   { --p-light: #ff5a5a; --p-dark: #990000; }
 .p-blue  { --p-light: #5aa8ff; --p-dark: #003b99; }
 .p-green { --p-light: #55d66a; --p-dark: #0b6b1d; }
 .p-purple{ --p-light: #b47cff; --p-dark: #5b1a99; }
 .p-black { --p-light: #666666; --p-dark: #111111; }
 
-/* kropki w panelu info (dopasuj do tych samych klas) */
 .dot.p-red{ background:#ff5a5a; }
 .dot.p-blue{ background:#5aa8ff; }
 .dot.p-green{ background:#55d66a; }
@@ -435,6 +456,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   font-size: 12px;
   border-radius: 999px;
 }
+
 /* ===== HOWTO – izolowany layout ===== */
 
 .howto-container{
@@ -447,9 +469,7 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   box-shadow: 0 6px 20px rgba(0,0,0,0.06);
 }
 
-.howto-container section{
-  margin-bottom: 40px;
-}
+.howto-container section{ margin-bottom: 40px; }
 
 .howto-container h2{
   font-size: 24px;
@@ -469,10 +489,24 @@ h1,h2,h3{ margin: 0 0 8px 0; }
 }
 
 /* Delikatne pola z kartą */
-.cell.magic {
-  background: rgba(255, 215, 0, 0.18); /* lekki żółty */
+.cell.magic{
+  background: rgba(255, 215, 0, 0.18);
   box-shadow: inset 0 0 0 2px rgba(255, 215, 0, 0.22);
 }
+
+.cell.step{
+  outline: 4px solid #111;
+  outline-offset: -4px;
+}
+
+.cell .pawn{
+  transition: transform 160ms ease;
+}
+
+.cell.step .pawn{
+  transform: translateY(-2px);
+}
+
 
 /* ===== RESPONSIVE ===== */
 
@@ -496,8 +530,11 @@ h1,h2,h3{ margin: 0 0 8px 0; }
   }
 
   .start-box{ grid-column: 1; grid-row: 1; }
-  .board{ grid-column: 1; grid-row: 2; width: min(92vw, 720px); }
+  .board{
+    grid-column: 1;
+    grid-row: 2;
+    width: min(92vw, var(--board-max));
+    transform: none; /* na małych ekranach bez skalowania, bo i tak jest mało miejsca */
+  }
   .legend{ grid-column: 1; grid-row: 3; }
 }
-
-

@@ -237,7 +237,7 @@ def do_one_move_in_container(container: Dict[str, Any], players: List[Dict[str, 
         msg = f"{player['name']}: wyrzucono {roll_value}. Ruch: {start} -> {new_pos}"
 
     if int(player["pos"]) == BOARD_END:
-        msg = f"Meta! Wygrał(a): {player['name']}"
+        msg = f"{player['name']}: wyrzucono {roll_value}. Ruch: {start} -> {new_pos}. Meta! Wygrał(a): {player['name']}"
         return msg, roll_value, True
 
     return msg, roll_value, False
@@ -273,29 +273,41 @@ def index():
         snakes_ladders=SNAKE_LADDERS,
         pending=GAME.get("pending"),
         magic_tiles=active_tiles,  # <- lista aktywnych (żółtych)
+        last_move = GAME.get("last_move")
     )
 
 
 @app.route("/roll")
 def roll():
+    # ktoś już wygrał
     if any(int(p["pos"]) == BOARD_END for p in GAME["players"]):
         return redirect("/")
 
+    # brak graczy
     if not GAME["players"]:
         return redirect("/new?mode=hotseat&players=2")
 
+    # pending decision (ANTY WĄŻ)
     if GAME.get("pending"):
         GAME["message"] = "Najpierw podejmij decyzję z kartą (wąż)."
         push_history(GAME["message"])
+        # nie animujemy, bo ruch nie jest domknięty
+        GAME["last_move"] = None
         return redirect("/")
 
     idx = int(GAME["turn"])
 
+    # nie ruszaj bota ręcznie
     if GAME.get("mode") == "ai" and GAME["players"][idx].get("is_bot", False):
         return redirect("/")
 
+    # ====== ANIMACJA: zapamiętaj skąd startował ======
+    from_pos = int(GAME["players"][idx]["pos"])
+
+    # główny ruch (Twoja logika)
     msg, roll_value, won = do_one_move_in_container(GAME, GAME["players"], idx, for_json_room=False)
 
+    # jeśli karta "DRUGI_RZUT" była użyta w tym ruchu
     if GAME.get("card_used") == "DRUGI_RZUT":
         msg = "DRUGI RZUT ->" + msg
         GAME["card_used"] = None
@@ -304,12 +316,24 @@ def roll():
     GAME["last_player"] = idx
     GAME["move_count"] = int(GAME.get("move_count", 0)) + 1
 
+    # ====== “dokładnie do 100” -> wylicz land_pos na potrzeby animacji ======
+    # jeśli rzut przekracza 100, to gracz nie idzie (land = from)
+    if from_pos + int(roll_value) > BOARD_END:
+        land_pos = from_pos
+    else:
+        land_pos = from_pos + int(roll_value)
+
+    # pending: decyzja na wężu (ANTY WĄŻ)
     if (not won) and try_start_snake_pending(GAME, idx, GAME["players"][idx]):
         msg += " 🃏 Masz ANTY WĄŻ — wybierz: zostać czy cofnąć się?"
         GAME["message"] = msg
         push_history(msg)
+
+        # tu ruch nie jest finalny -> nie animujemy jeszcze
+        GAME["last_move"] = None
         return redirect("/")
 
+    # jeśli nie ma pending, aplikujemy węża/drabinę itd.
     if not won:
         extra = apply_snake_if_no_pending(GAME["players"][idx])
         if extra:
@@ -320,19 +344,38 @@ def roll():
         if extra2:
             msg += extra2
 
-    if (not won) and roll_value == 6:
+    if (not won) and int(roll_value) == 6:
         msg += " 🎲 Bonus: 6 → dodatkowy rzut!"
 
     GAME["message"] = msg
     push_history(msg)
 
+    # ====== po wszystkich efektach mamy finalną pozycję ======
+    to_pos = int(GAME["players"][idx]["pos"])
+
+    # ====== last_move dla animacji 2-fazowej ======
+    # animujemy tylko jeśli nie wygrana i faktycznie był ruch/efekt
+    if (to_pos != from_pos or land_pos != from_pos):
+        GAME["last_move"] = {
+            "player": idx,
+            "from": from_pos,
+            "land": land_pos,
+            "to": to_pos,
+            "move_count": GAME["move_count"],
+            "won": bool(won),
+        }
+    else:
+        GAME["last_move"] = None
+
     if won:
         return redirect("/")
 
-    if roll_value != 6:
+    # zmiana tury tylko jeśli nie wypadła 6
+    if int(roll_value) != 6:
         GAME["turn"] = (idx + 1) % len(GAME["players"])
 
     return redirect("/")
+
 
 
 @app.route("/snake_decision", methods=["POST"])
@@ -432,62 +475,74 @@ def use_card():
 
 @app.route("/ai_move")
 def ai_move():
-    # (zostawiamy, ale ważne: poprawne wywołanie do_one_move_in_container)
-    if GAME.get("mode") != "ai":
-        return redirect("/")
+    # jeśli ktoś wygrał lub nie ma graczy
+    if not GAME["players"]:
+        return redirect("/new?mode=ai")
 
     if any(int(p["pos"]) == BOARD_END for p in GAME["players"]):
         return redirect("/")
 
     idx = int(GAME["turn"])
-    if not GAME["players"][idx].get("is_bot", False):
+
+    # jeśli to nie tura bota -> wróć
+    if not (GAME.get("mode") == "ai" and GAME["players"][idx].get("is_bot", False)):
         return redirect("/")
 
-    bot = GAME["players"][idx]
-
-    # pending dla bota -> stay
-    pend = GAME.get("pending")
-    if pend and pend.get("type") == "snake_choice" and pend.get("player_id") == bot.get("id"):
-        bot["card"] = None
-        msg = f"🤖 {bot['name']}: używa ANTY WĄŻ i zostaje na {pend['from']} ✅"
-        GAME["pending"] = None
-        GAME["message"] = msg
-        push_history(msg)
-        if GAME.get("last_roll") != 6:
-            GAME["turn"] = (idx + 1) % len(GAME["players"])
-        return redirect("/")
+    # ====== zapamiętaj start ======
+    from_pos = int(GAME["players"][idx]["pos"])
 
     msg, roll_value, won = do_one_move_in_container(GAME, GAME["players"], idx, for_json_room=False)
-    msg = "🤖 " + msg
 
-    GAME["last_roll"] = roll_value
-    GAME["last_player"] = idx
-    GAME["move_count"] = int(GAME.get("move_count", 0)) + 1
+    # “dokładnie 100”
+    if from_pos + int(roll_value) > BOARD_END:
+        land_pos = from_pos
+    else:
+        land_pos = from_pos + int(roll_value)
 
-    if (not won) and try_start_snake_pending(GAME, idx, bot):
-        msg += " 🃏 (bot) ma ANTY WĄŻ"
-        GAME["message"] = msg
-        push_history(msg)
+    # tu w AI raczej nie chcesz pending (ANTY WĄŻ dla bota), ale jeśli masz, to:
+    if GAME.get("pending"):
+        GAME["last_move"] = None
         return redirect("/")
 
     if not won:
-        extra = apply_snake_if_no_pending(bot)
+        extra = apply_snake_if_no_pending(GAME["players"][idx])
         if extra:
             msg += extra
-        extra2 = give_card_if_magic_tile(GAME, bot, for_json_room=False)
+
+    if not won:
+        extra2 = give_card_if_magic_tile(GAME, GAME["players"][idx], for_json_room=False)
         if extra2:
             msg += extra2
 
-    if (not won) and roll_value == 6:
+    if (not won) and int(roll_value) == 6:
         msg += " 🎲 Bonus: 6 → dodatkowy rzut!"
 
     GAME["message"] = msg
     push_history(msg)
 
-    if not won and roll_value != 6:
+    to_pos = int(GAME["players"][idx]["pos"])
+
+    if (not won) and (from_pos != to_pos or from_pos != land_pos):
+        GAME["last_move"] = {
+            "player": idx,
+            "from": from_pos,
+            "land": land_pos,
+            "to": to_pos,
+            "move_count": int(GAME.get("move_count", 0)) + 1,
+        }
+        GAME["move_count"] = GAME["last_move"]["move_count"]
+    else:
+        GAME["last_move"] = None
+        GAME["move_count"] = int(GAME.get("move_count", 0)) + 1
+
+    if won:
+        return redirect("/")
+
+    if int(roll_value) != 6:
         GAME["turn"] = (idx + 1) % len(GAME["players"])
 
     return redirect("/")
+
 
 
 @app.route("/new")
@@ -591,7 +646,10 @@ def mp_create():
         "max_players": max_players,
         "winner": None,
         "magic_tiles": {str(k): v for k, v in mt.items()},  # JSON-friendly dict
-        "pending": None
+        "pending": None,
+
+        # ✅ NEW: do animacji (2-fazowej) w multiplayerze
+        "last_move": None
     }
     save_room(code, room)
 
@@ -669,6 +727,8 @@ def mp_state(code):
     room["turn"] = int(room.get("turn", 0))
     room["last_player"] = int(room.get("last_player", 0))
     room["move_count"] = int(room.get("move_count", 0))
+
+    # last_move zostaje w JSON, bo room jest JSON-owalny
     return jsonify(room)
 
 
@@ -696,7 +756,18 @@ def mp_roll(code):
     if idx != int(room.get("turn", 0)):
         return jsonify({"error": "not_your_turn"}), 403
 
+    # ✅ FROM (do animacji)
+    from_pos = int(room["players"][idx]["pos"])
+
     msg, roll_value, won = do_one_move_in_container(room, room["players"], idx, for_json_room=True)
+
+    roll_value = int(roll_value)
+
+    # ✅ LAND (po samym rzucie, z zasadą "dokładnie 100")
+    if from_pos + roll_value > BOARD_END:
+        land_pos = from_pos
+    else:
+        land_pos = from_pos + roll_value
 
     room["last_roll"] = roll_value
     room["last_player"] = idx
@@ -707,6 +778,10 @@ def mp_roll(code):
         room["message"] = msg
         room["history"].append(msg)
         room["history"] = room["history"][-8:]
+
+        # ✅ ruch nie jest domknięty → nie animujemy
+        room["last_move"] = None
+
         save_room(code, room)
         return redirect(f"/mp/room/{code}")
 
@@ -726,6 +801,22 @@ def mp_roll(code):
     room["message"] = msg
     room["history"].append(msg)
     room["history"] = room["history"][-8:]
+
+    # ✅ TO (final po wężu/drabinie/magic)
+    to_pos = int(room["players"][idx]["pos"])
+
+    # ✅ last_move zapisujemy TAKŻE przy won=True (żeby meta nie była "siup")
+    if (to_pos != from_pos) or (land_pos != from_pos):
+        room["last_move"] = {
+            "player": idx,
+            "from": from_pos,
+            "land": land_pos,
+            "to": to_pos,
+            "move_count": room["move_count"],
+            "won": bool(won),
+        }
+    else:
+        room["last_move"] = None
 
     if won:
         room["winner"] = room["players"][idx]["id"]
@@ -762,6 +853,10 @@ def mp_snake_decision(code):
     choice = request.form.get("choice", "stay")
     pl = room["players"][idx]
 
+    # ✅ FROM (przed decyzją)
+    from_pos = int(pl["pos"])
+    land_pos = int(pend["from"])  # pole węża (tam "stoi" przed wyborem)
+
     if choice == "back":
         pl["pos"] = pend["to"]
         msg = f"{pl['name']}: wybrał(a) cofnięcie. 🐍 {pend['from']} -> {pend['to']}"
@@ -773,6 +868,20 @@ def mp_snake_decision(code):
     room["message"] = msg
     room["history"].append(msg)
     room["history"] = room["history"][-8:]
+
+    # ✅ TO (po decyzji)
+    to_pos = int(pl["pos"])
+
+    # ✅ nowy ruch (animacja decyzji też ma się pojawić)
+    room["move_count"] = int(room.get("move_count", 0)) + 1
+    room["last_move"] = {
+        "player": idx,
+        "from": from_pos,
+        "land": land_pos,
+        "to": to_pos,
+        "move_count": room["move_count"],
+        "won": False,
+    }
 
     if room.get("last_roll") != 6:
         room["turn"] = (idx + 1) % len(room["players"])
@@ -816,34 +925,47 @@ def mp_use_card(code):
         room["message"] = msg
         room["history"].append(msg)
         room["history"] = room["history"][-8:]
+
+        # ruchu nie ma → brak animacji
+        room["last_move"] = None
+
         save_room(code, room)
         return redirect(f"/mp/room/{code}")
 
     if card == "TELEPORT_PLUS3":
-        start = int(pl["pos"])
-        tentative = start + 3
+        # ✅ FROM (animacja)
+        from_pos = int(pl["pos"])
+
+        tentative = from_pos + 3
         if tentative > BOARD_END:
             return jsonify({"error": "must_hit_exact"}), 400
 
         # teleport = schodzisz ze startu
-        mark_magic_tile_used_if_leaving(room, pl, start, for_json_room=True)
+        mark_magic_tile_used_if_leaving(room, pl, from_pos, for_json_room=True)
 
         pl["card"] = None
         pl["pos"] = tentative
-        msg = f"{pl['name']}: używa TELEPORT +3: {start} -> {tentative}"
+        msg = f"{pl['name']}: używa TELEPORT +3: {from_pos} -> {tentative}"
+
+        # land = tentative (po użyciu karty)
+        land_pos = tentative
 
         if is_ladder(tentative):
             after = SNAKE_LADDERS[tentative]
             pl["pos"] = after
             msg += f" 🪜 Drabina! {tentative} -> {after}"
+
         elif is_snake(tentative):
             if try_start_snake_pending(room, idx, pl):
                 msg += " 🃏 Masz ANTY WĄŻ — wybierz: zostać czy cofnąć się?"
                 room["message"] = msg
                 room["history"].append(msg)
                 room["history"] = room["history"][-8:]
+
+                room["last_move"] = None
                 save_room(code, room)
                 return redirect(f"/mp/room/{code}")
+
             extra = apply_snake_if_no_pending(pl)
             if extra:
                 msg += extra
@@ -855,6 +977,21 @@ def mp_use_card(code):
         room["message"] = msg
         room["history"].append(msg)
         room["history"] = room["history"][-8:]
+
+        # ✅ TO (final)
+        to_pos = int(pl["pos"])
+
+        # ✅ zwiększ move_count i ustaw last_move do animacji
+        room["move_count"] = int(room.get("move_count", 0)) + 1
+        room["last_move"] = {
+            "player": idx,
+            "from": from_pos,
+            "land": land_pos,
+            "to": to_pos,
+            "move_count": room["move_count"],
+            "won": False,
+        }
+
         save_room(code, room)
         return redirect(f"/mp/room/{code}")
 
