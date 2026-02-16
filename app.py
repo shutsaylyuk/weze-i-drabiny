@@ -16,43 +16,146 @@ SNAKE_LADDERS = {
 }
 
 # --- MAGIC CARDS ---
-# Stan pola:
 # None -> wolne
 # "p1"/0 -> zajęte przez gracza, który na nim stoi i dostał kartę (żółte dalej świeci)
 # "USED" -> zużyte (żółte ma zniknąć)
 MAGIC_TILES_TEMPLATE: Dict[int, Optional[str]] = {
     6: None, 14: None, 22: None, 35: None, 47: None, 58: None, 73: None, 86: None
 }
-CARD_POOL = [ "ANTY_WAZ", "TELEPORT_PLUS3"]
 
-# --- GAME (hotseat/ai) ---
-GAME: Dict[str, Any] = {
-    "players": [],
-    "turn": 0,
-    "last_roll": None,
-    "last_player": 0,
-    "message": "",
-    "history": [],
-    "move_count": 0,
-    "mode": "hotseat",
-    "card_used" : None,
-    "magic_tiles": MAGIC_TILES_TEMPLATE.copy(),  # dict[int, state]
-    "pending": None,
-}
+CARD_POOL = ["ANTY_WAZ", "TELEPORT_PLUS3"]
 
-# --- Multiplayer rooms (JSON) ---
+
+
+
+class Player:
+    def __init__(
+        self,
+        pid: Any,
+        name: str,
+        pos: int = 0,
+        color: str = "p-red",
+        card: Optional[str] = None,
+        is_bot: bool = False
+    ):
+        self.id = pid
+        self.name = name
+        self.pos = int(pos)
+        self.color = color
+        self.card = card
+        self.is_bot = bool(is_bot)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "pos": int(self.pos),
+            "color": self.color,
+            "card": self.card,
+            "is_bot": self.is_bot
+        }
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> "Player":
+        return Player(
+            pid=d.get("id"),
+            name=d.get("name", "Gracz"),
+            pos=int(d.get("pos", 0)),
+            color=d.get("color", "p-red"),
+            card=d.get("card"),
+            is_bot=bool(d.get("is_bot", False))
+        )
+
+
+class MagicTiles:
+    """
+    Trzyma magic_tiles jako dict[int, state].
+    Dla multiplayera zapisujemy jako dict[str, state] (JSON-friendly).
+    """
+    def __init__(self, initial: Optional[Dict[int, Any]] = None):
+        self.tiles: Dict[int, Any] = dict(initial) if initial else MAGIC_TILES_TEMPLATE.copy()
+
+    @staticmethod
+    def from_container(container: Dict[str, Any]) -> "MagicTiles":
+        mt = container.get("magic_tiles")
+        if not mt:
+            return MagicTiles({})
+
+        out: Dict[int, Any] = {}
+        if isinstance(mt, dict):
+            for k, v in mt.items():
+                try:
+                    out[int(k)] = v
+                except Exception:
+                    pass
+        elif isinstance(mt, list):
+            out = {int(x): None for x in mt}
+        return MagicTiles(out)
+
+    def write_back(self, container: Dict[str, Any], *, for_json_room: bool) -> None:
+        if for_json_room:
+            container["magic_tiles"] = {str(k): v for k, v in self.tiles.items()}
+        else:
+            container["magic_tiles"] = self.tiles
+
+    def active_list(self) -> List[int]:
+        return [k for k, v in self.tiles.items() if v != "USED"]
+
+
+class GameState:
+    """
+    Hot-seat / AI
+    """
+    def __init__(self):
+        self.players: List[Player] = []
+        self.turn: int = 0
+        self.last_roll: Optional[int] = None
+        self.last_player: int = 0
+        self.message: str = ""
+        self.history: List[str] = []
+        self.move_count: int = 0
+        self.mode: str = "hotseat"
+        self.card_used: Optional[str] = None
+        self.pending: Optional[Dict[str, Any]] = None
+        self.last_move: Optional[Dict[str, Any]] = None
+        self.magic = MagicTiles(MAGIC_TILES_TEMPLATE.copy())
+
+    def push_history(self, text: str) -> None:
+        self.history.append(text)
+        self.history = self.history[-8:]
+
+    def anyone_won(self) -> bool:
+        return any(int(p.pos) == BOARD_END for p in self.players)
+
+    def to_template_payload(self) -> Dict[str, Any]:
+        return {
+            "players": [p.to_dict() for p in self.players],
+            "turn": self.turn,
+            "last_roll": self.last_roll,
+            "last_player": self.last_player,
+            "message": self.message,
+            "history": self.history,
+            "move_count": self.move_count,
+            "mode": self.mode,
+            "pending": self.pending,
+            "magic_tiles": self.magic.active_list(),   # lista aktywnych żółtych pól
+            "last_move": self.last_move
+        }
+
+
+# =========================
+#   Multiplayer storage
+# =========================
+
 ROOMS_DIR = Path("data/rooms")
 ROOMS_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def room_path(code: str) -> Path:
     return ROOMS_DIR / f"{code}.json"
 
-
 def gen_room_code(n=4) -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(random.choice(alphabet) for _ in range(n))
-
 
 def load_room(code: str) -> Dict[str, Any]:
     p = room_path(code)
@@ -60,7 +163,6 @@ def load_room(code: str) -> Dict[str, Any]:
         return {}
     with p.open("r", encoding="utf-8") as f:
         return json.load(f)
-
 
 def save_room(code: str, data: Dict[str, Any]) -> None:
     p = room_path(code)
@@ -70,110 +172,46 @@ def save_room(code: str, data: Dict[str, Any]) -> None:
     tmp.replace(p)
 
 
-# ----------------- Magic tiles helpers -----------------
-
-def mt_get(container: Dict[str, Any]) -> Dict[int, Any]:
-    """
-    Zwraca magic_tiles jako dict z int-kluczami.
-    - GAME trzyma inty
-    - room z JSON ma stringi -> konwertujemy
-    """
-    mt = container.get("magic_tiles")
-    if not mt:
-        return {}
-
-    if isinstance(mt, dict):
-        # jeśli klucze są stringami (JSON) -> int
-        out: Dict[int, Any] = {}
-        for k, v in mt.items():
-            try:
-                out[int(k)] = v
-            except Exception:
-                pass
-        return out
-
-    # jeśli ktoś omyłkowo trzyma listę -> zamieniamy na dict wolnych pól
-    if isinstance(mt, list):
-        return {int(x): None for x in mt}
-
-    return {}
-
-
-def mt_set(container: Dict[str, Any], mt_int: Dict[int, Any], *, for_json_room: bool) -> None:
-    """
-    Zapisuje magic_tiles do container:
-    - hotseat/ai: int klucze
-    - multiplayer room (JSON): string klucze
-    """
-    if for_json_room:
-        container["magic_tiles"] = {str(k): v for k, v in mt_int.items()}
-    else:
-        container["magic_tiles"] = mt_int
-
-
-def mt_reset() -> Dict[int, Any]:
-    return MAGIC_TILES_TEMPLATE.copy()
-
-
-# ----------------- Helpers -----------------
-
-def push_history(text: str) -> None:
-    GAME["history"].append(text)
-    GAME["history"] = GAME["history"][-8:]
-
+# =========================
+#   Game logic helpers
+# =========================
 
 def is_snake(pos: int) -> bool:
     return pos in SNAKE_LADDERS and SNAKE_LADDERS[pos] < pos
-
 
 def is_ladder(pos: int) -> bool:
     return pos in SNAKE_LADDERS and SNAKE_LADDERS[pos] > pos
 
 
 def give_card_if_magic_tile(container: Dict[str, Any], player: Dict[str, Any], *, for_json_room: bool) -> Optional[str]:
-    """
-    Daje kartę jeśli gracz stoi na magicznym polu i pole jest:
-    - wolne (None) -> daje kartę i zajmuje pole (player_id)
-    - zajęte przez niego (player_id) -> nic nie robi
-    - USED -> nic
-    - zajęte przez kogoś innego -> nic
-    """
     pos = int(player["pos"])
     pid = player.get("id")
 
-    mt = mt_get(container)
-    if pos not in mt:
+    mt = MagicTiles.from_container(container)
+    if pos not in mt.tiles:
         return None
 
-    state = mt.get(pos)
-
+    state = mt.tiles.get(pos)
     if state == "USED":
         return None
-
     if state is not None and state != pid:
         return None
-
     if player.get("card"):
-        # ma już kartę -> nie dajemy drugiej, ale zostawiamy stan pola jak był
         return None
 
     card = random.choice(CARD_POOL)
     player["card"] = card
-    mt[pos] = pid  # pole zajęte przez tego gracza (żółte ma świecić)
-    mt_set(container, mt, for_json_room=for_json_room)
+    mt.tiles[pos] = pid
+    mt.write_back(container, for_json_room=for_json_room)
     return f" ✨ Zdobywasz kartę: {card.replace('_', ' ')}"
 
 
 def mark_magic_tile_used_if_leaving(container: Dict[str, Any], player: Dict[str, Any], start_pos: int, *, for_json_room: bool) -> None:
-    """
-    Jeśli gracz SCHODZI z pola magicznego, które jest zajęte przez niego -> ustawiamy USED (żółte znika).
-    Wywołuj tylko jeśli ruch faktycznie się wykonał (czyli tentative <= 100).
-    """
     pid = player.get("id")
-    mt = mt_get(container)
-    if start_pos in mt and mt.get(start_pos) == pid:
-        mt[start_pos] = "USED"
-        mt_set(container, mt, for_json_room=for_json_room)
+    mt = MagicTiles.from_container(container)
+    if start_pos in mt.tiles and mt.tiles.get(start_pos) == pid:
+        mt.tiles[start_pos] = "USED"
+        mt.write_back(container, for_json_room=for_json_room)
 
 
 def try_start_snake_pending(container: Dict[str, Any], idx: int, player: Dict[str, Any]) -> bool:
@@ -202,8 +240,6 @@ def apply_snake_if_no_pending(player: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-# ----------------- Core move logic -----------------
-
 def do_one_move_in_container(container: Dict[str, Any], players: List[Dict[str, Any]], player_idx: int, *, for_json_room: bool) -> Tuple[str, int, bool]:
     """
     Surowy ruch: rzut + przesunięcie + drabina automatycznie.
@@ -220,7 +256,7 @@ def do_one_move_in_container(container: Dict[str, Any], players: List[Dict[str, 
         msg = f"{player['name']}: wyrzucono {roll_value}. Musisz trafić dokładnie!"
         return msg, roll_value, False
 
-    # skoro ruch się wykona -> schodzimy ze startu, więc ewentualnie zużyj magic tile
+    # ruch się wykona -> jeśli start był magiczny i należał do gracza => USED
     mark_magic_tile_used_if_leaving(container, player, start, for_json_room=for_json_room)
 
     player["pos"] = tentative
@@ -243,231 +279,253 @@ def do_one_move_in_container(container: Dict[str, Any], players: List[Dict[str, 
     return msg, roll_value, False
 
 
-# ----------------- Routes: Hotseat/AI -----------------
+# =========================
+#   Global GAME (klasa)
+# =========================
+
+GAME = GameState()
+
+
+# =========================
+#   Routes: Hotseat/AI
+# =========================
 
 @app.route("/")
 def index():
-    if not GAME["players"]:
+    if not GAME.players:
         return redirect("/new?mode=hotseat&players=2")
 
-    won = any(int(p["pos"]) == BOARD_END for p in GAME["players"])
-    n_players = len(GAME["players"])
-    mc = int(GAME.get("move_count", 0))
+    won = GAME.anyone_won()
+    n_players = len(GAME.players)
+    mc = int(GAME.move_count)
     round_num = 1 if mc == 0 else ((mc - 1) // n_players) + 1
 
-    # do template podajemy tylko pola, które nie są USED
-    mt = mt_get(GAME)
-    active_tiles = [k for k, v in mt.items() if v != "USED"]
-
-    return render_template(
-        "index.html",
-        players=GAME["players"],
-        turn=GAME["turn"],
-        last_roll=GAME["last_roll"],
-        last_player=GAME.get("last_player", 0),
-        message=GAME["message"],
-        won=won,
-        round=round_num,
-        history=GAME["history"],
-        mode=GAME.get("mode", "hotseat"),
-        snakes_ladders=SNAKE_LADDERS,
-        pending=GAME.get("pending"),
-        magic_tiles=active_tiles,  # <- lista aktywnych (żółtych)
-        last_move = GAME.get("last_move")
-    )
+    payload = GAME.to_template_payload()
+    payload.update({
+        "won": won,
+        "round": round_num,
+        "snakes_ladders": SNAKE_LADDERS,
+    })
+    return render_template("index.html", **payload)
 
 
 @app.route("/roll")
 def roll():
-    # ktoś już wygrał
-    if any(int(p["pos"]) == BOARD_END for p in GAME["players"]):
+    if GAME.anyone_won():
         return redirect("/")
 
-    # brak graczy
-    if not GAME["players"]:
+    if not GAME.players:
         return redirect("/new?mode=hotseat&players=2")
 
-    # pending decision (ANTY WĄŻ)
-    if GAME.get("pending"):
-        GAME["message"] = "Najpierw podejmij decyzję z kartą (wąż)."
-        push_history(GAME["message"])
-        # nie animujemy, bo ruch nie jest domknięty
-        GAME["last_move"] = None
+    if GAME.pending:
+        GAME.message = "Najpierw podejmij decyzję z kartą (wąż)."
+        GAME.push_history(GAME.message)
+        GAME.last_move = None
         return redirect("/")
 
-    idx = int(GAME["turn"])
+    idx = int(GAME.turn)
 
-    # nie ruszaj bota ręcznie
-    if GAME.get("mode") == "ai" and GAME["players"][idx].get("is_bot", False):
+    if GAME.mode == "ai" and GAME.players[idx].is_bot:
         return redirect("/")
 
-    # ====== ANIMACJA: zapamiętaj skąd startował ======
-    from_pos = int(GAME["players"][idx]["pos"])
+    # pracujemy na dictach (żeby nie ruszać Twojej logiki), ale trzymamy 1 spójny container
+    players_dict = [p.to_dict() for p in GAME.players]
+    container = {"magic_tiles": GAME.magic.tiles, "pending": GAME.pending}
 
-    # główny ruch (Twoja logika)
-    msg, roll_value, won = do_one_move_in_container(GAME, GAME["players"], idx, for_json_room=False)
+    from_pos = int(players_dict[idx]["pos"])
 
-    # jeśli karta "DRUGI_RZUT" była użyta w tym ruchu
-    if GAME.get("card_used") == "DRUGI_RZUT":
+    msg, roll_value, won = do_one_move_in_container(container, players_dict, idx, for_json_room=False)
+
+    # ✅ KLUCZOWE: utrwal zmiany w magic_tiles (USED po zejściu)
+    GAME.magic.tiles = MagicTiles.from_container(container).tiles
+    GAME.pending = container.get("pending")
+
+    # zaktualizuj players w klasach
+    GAME.players = [Player.from_dict(d) for d in players_dict]
+
+    if GAME.card_used == "DRUGI_RZUT":
         msg = "DRUGI RZUT ->" + msg
-        GAME["card_used"] = None
+        GAME.card_used = None
 
-    GAME["last_roll"] = roll_value
-    GAME["last_player"] = idx
-    GAME["move_count"] = int(GAME.get("move_count", 0)) + 1
+    GAME.last_roll = int(roll_value)
+    GAME.last_player = idx
+    GAME.move_count = int(GAME.move_count) + 1
 
-    # ====== “dokładnie do 100” -> wylicz land_pos na potrzeby animacji ======
-    # jeśli rzut przekracza 100, to gracz nie idzie (land = from)
+    # land (po samym rzucie, z zasadą dokładnie 100)
     if from_pos + int(roll_value) > BOARD_END:
         land_pos = from_pos
     else:
         land_pos = from_pos + int(roll_value)
 
-    # pending: decyzja na wężu (ANTY WĄŻ)
-    if (not won) and try_start_snake_pending(GAME, idx, GAME["players"][idx]):
-        msg += " 🃏 Masz ANTY WĄŻ — wybierz: zostać czy cofnąć się?"
-        GAME["message"] = msg
-        push_history(msg)
+    # pending: decyzja na wężu
+    players_dict = [p.to_dict() for p in GAME.players]  # odśwież
+    if (not won) and try_start_snake_pending(container, idx, players_dict[idx]):
+        GAME.pending = container["pending"]
+        GAME.magic.tiles = MagicTiles.from_container(container).tiles  # na wszelki wypadek
+        GAME.players = [Player.from_dict(d) for d in players_dict]
 
-        # tu ruch nie jest finalny -> nie animujemy jeszcze
-        GAME["last_move"] = None
+        msg += " 🃏 Masz ANTY WĄŻ — wybierz: zostać czy cofnąć się?"
+        GAME.message = msg
+        GAME.push_history(msg)
+        GAME.last_move = None
         return redirect("/")
 
-    # jeśli nie ma pending, aplikujemy węża/drabinę itd.
+    # jeśli nie ma pending -> wąż spada
     if not won:
-        extra = apply_snake_if_no_pending(GAME["players"][idx])
+        extra = apply_snake_if_no_pending(players_dict[idx])
         if extra:
             msg += extra
 
+    # karta z magic tile (tu również container może się zmienić)
     if not won:
-        extra2 = give_card_if_magic_tile(GAME, GAME["players"][idx], for_json_room=False)
+        extra2 = give_card_if_magic_tile(container, players_dict[idx], for_json_room=False)
         if extra2:
             msg += extra2
+
+    # ✅ utrwal po kartach
+    GAME.magic.tiles = MagicTiles.from_container(container).tiles
+    GAME.pending = container.get("pending")
+    GAME.players = [Player.from_dict(d) for d in players_dict]
 
     if (not won) and int(roll_value) == 6:
         msg += " 🎲 Bonus: 6 → dodatkowy rzut!"
 
-    GAME["message"] = msg
-    push_history(msg)
+    GAME.message = msg
+    GAME.push_history(msg)
 
-    # ====== po wszystkich efektach mamy finalną pozycję ======
-    to_pos = int(GAME["players"][idx]["pos"])
+    to_pos = int(GAME.players[idx].pos)
 
-    # ====== last_move dla animacji 2-fazowej ======
-    # animujemy tylko jeśli nie wygrana i faktycznie był ruch/efekt
-    if (to_pos != from_pos or land_pos != from_pos):
-        GAME["last_move"] = {
+    if (to_pos != from_pos) or (land_pos != from_pos):
+        GAME.last_move = {
             "player": idx,
             "from": from_pos,
             "land": land_pos,
             "to": to_pos,
-            "move_count": GAME["move_count"],
+            "move_count": GAME.move_count,
             "won": bool(won),
         }
     else:
-        GAME["last_move"] = None
+        GAME.last_move = None
 
     if won:
         return redirect("/")
 
-    # zmiana tury tylko jeśli nie wypadła 6
     if int(roll_value) != 6:
-        GAME["turn"] = (idx + 1) % len(GAME["players"])
+        GAME.turn = (idx + 1) % len(GAME.players)
 
     return redirect("/")
 
 
-
 @app.route("/snake_decision", methods=["POST"])
 def snake_decision():
-    pend = GAME.get("pending")
+    pend = GAME.pending
     if not pend or pend.get("type") != "snake_choice":
         return redirect("/")
 
     pid = pend["player_id"]
-    idx = next((i for i, p in enumerate(GAME["players"]) if p.get("id") == pid), None)
+    idx = next((i for i, p in enumerate(GAME.players) if p.id == pid), None)
     if idx is None:
-        GAME["pending"] = None
+        GAME.pending = None
         return redirect("/")
 
-    choice = request.form.get("choice", "stay")  # stay/back
-    pl = GAME["players"][idx]
+    choice = request.form.get("choice", "stay")
+    pl = GAME.players[idx]
 
     if choice == "back":
-        pl["pos"] = pend["to"]
-        msg = f"{pl['name']}: wybrał(a) cofnięcie. 🐍 {pend['from']} -> {pend['to']}"
+        pl.pos = int(pend["to"])
+        msg = f"{pl.name}: wybrał(a) cofnięcie. 🐍 {pend['from']} -> {pend['to']}"
     else:
-        pl["card"] = None
-        msg = f"{pl['name']}: użył(a) ANTY WĄŻ i zostaje na {pend['from']} ✅"
+        pl.card = None
+        msg = f"{pl.name}: użył(a) ANTY WĄŻ i zostaje na {pend['from']} ✅"
 
-    GAME["pending"] = None
-    GAME["message"] = msg
-    push_history(msg)
+    GAME.pending = None
+    GAME.message = msg
+    GAME.push_history(msg)
 
-    if GAME.get("last_roll") != 6:
-        GAME["turn"] = (idx + 1) % len(GAME["players"])
+    if GAME.last_roll != 6:
+        GAME.turn = (idx + 1) % len(GAME.players)
 
     return redirect("/")
 
 
 @app.route("/use_card", methods=["POST"])
 def use_card():
-    if not GAME["players"]:
+    if not GAME.players:
         return redirect("/")
 
-    if GAME.get("pending"):
-        GAME["message"] = "Najpierw rozwiąż decyzję na wężu."
-        push_history(GAME["message"])
+    if GAME.pending:
+        GAME.message = "Najpierw rozwiąż decyzję na wężu."
+        GAME.push_history(GAME.message)
         return redirect("/")
 
-    idx = int(GAME["turn"])
-    pl = GAME["players"][idx]
-    card = pl.get("card")
-
+    idx = int(GAME.turn)
+    card = GAME.players[idx].card
     if not card:
         return redirect("/")
 
+    # Uwaga: działamy na dictach, potem odtwarzamy obiekty (żeby wszystko było spójne)
+    players_dict = [p.to_dict() for p in GAME.players]
+    container = {"magic_tiles": GAME.magic.tiles, "pending": GAME.pending}
+
+    pl = players_dict[idx]
+
     if card == "DRUGI_RZUT":
         pl["card"] = None
-        GAME["card_used"] = "DRUGI_RZUT"
+        GAME.players = [Player.from_dict(d) for d in players_dict]
+        GAME.card_used = "DRUGI_RZUT"
         return redirect("/roll")
 
     if card == "TELEPORT_PLUS3":
         start = int(pl["pos"])
         tentative = start + 3
+
         if tentative > BOARD_END:
             msg = f"{pl['name']}: TELEPORT +3, ale musisz trafić dokładnie!"
-            GAME["message"] = msg
-            push_history(msg)
+            GAME.message = msg
+            GAME.push_history(msg)
             return redirect("/")
 
-        # teleport = schodzisz ze startu
-        mark_magic_tile_used_if_leaving(GAME, pl, start, for_json_room=False)
+        # ✅ zejście z magic tile -> USED
+        mark_magic_tile_used_if_leaving(container, pl, start, for_json_room=False)
 
         pl["card"] = None
         pl["pos"] = tentative
         msg = f"{pl['name']}: używa TELEPORT +3: {start} -> {tentative}"
 
+        land_pos = tentative
+
         if is_ladder(tentative):
             after = SNAKE_LADDERS[tentative]
             pl["pos"] = after
             msg += f" 🪜 Drabina! {tentative} -> {after}"
+
         elif is_snake(tentative):
-            if try_start_snake_pending(GAME, idx, pl):
+            # pending?
+            if try_start_snake_pending(container, idx, pl):
                 msg += " 🃏 Masz ANTY WĄŻ — wybierz: zostać czy cofnąć się?"
-                GAME["message"] = msg
-                push_history(msg)
+                GAME.pending = container["pending"]
+                GAME.magic.tiles = MagicTiles.from_container(container).tiles
+                GAME.players = [Player.from_dict(d) for d in players_dict]
+                GAME.message = msg
+                GAME.push_history(msg)
                 return redirect("/")
+
             extra = apply_snake_if_no_pending(pl)
             if extra:
                 msg += extra
 
-        extra2 = give_card_if_magic_tile(GAME, pl, for_json_room=False)
+        # karta z magic tile
+        extra2 = give_card_if_magic_tile(container, pl, for_json_room=False)
         if extra2:
             msg += extra2
 
-        GAME["message"] = msg
-        push_history(msg)
+        # ✅ utrwal stan
+        GAME.magic.tiles = MagicTiles.from_container(container).tiles
+        GAME.pending = container.get("pending")
+        GAME.players = [Player.from_dict(d) for d in players_dict]
+        GAME.message = msg
+        GAME.push_history(msg)
+
         return redirect("/")
 
     return redirect("/")
@@ -475,74 +533,82 @@ def use_card():
 
 @app.route("/ai_move")
 def ai_move():
-    # jeśli ktoś wygrał lub nie ma graczy
-    if not GAME["players"]:
+    if not GAME.players:
         return redirect("/new?mode=ai")
 
-    if any(int(p["pos"]) == BOARD_END for p in GAME["players"]):
+    if GAME.anyone_won():
         return redirect("/")
 
-    idx = int(GAME["turn"])
-
-    # jeśli to nie tura bota -> wróć
-    if not (GAME.get("mode") == "ai" and GAME["players"][idx].get("is_bot", False)):
+    idx = int(GAME.turn)
+    if not (GAME.mode == "ai" and GAME.players[idx].is_bot):
         return redirect("/")
 
-    # ====== zapamiętaj start ======
-    from_pos = int(GAME["players"][idx]["pos"])
+    players_dict = [p.to_dict() for p in GAME.players]
+    container = {"magic_tiles": GAME.magic.tiles, "pending": GAME.pending}
 
-    msg, roll_value, won = do_one_move_in_container(GAME, GAME["players"], idx, for_json_room=False)
+    from_pos = int(players_dict[idx]["pos"])
 
-    # “dokładnie 100”
+    msg, roll_value, won = do_one_move_in_container(container, players_dict, idx, for_json_room=False)
+
+    # ✅ KLUCZOWE: utrwal USED po zejściu
+    GAME.magic.tiles = MagicTiles.from_container(container).tiles
+    GAME.pending = container.get("pending")
+
     if from_pos + int(roll_value) > BOARD_END:
         land_pos = from_pos
     else:
         land_pos = from_pos + int(roll_value)
 
-    # tu w AI raczej nie chcesz pending (ANTY WĄŻ dla bota), ale jeśli masz, to:
-    if GAME.get("pending"):
-        GAME["last_move"] = None
+    # bot: nie robimy pending decision (ale jeśli jednak kiedyś ustawisz, to nie animujemy)
+    if GAME.pending:
+        GAME.last_move = None
+        GAME.players = [Player.from_dict(d) for d in players_dict]
         return redirect("/")
 
     if not won:
-        extra = apply_snake_if_no_pending(GAME["players"][idx])
+        extra = apply_snake_if_no_pending(players_dict[idx])
         if extra:
             msg += extra
 
     if not won:
-        extra2 = give_card_if_magic_tile(GAME, GAME["players"][idx], for_json_room=False)
+        extra2 = give_card_if_magic_tile(container, players_dict[idx], for_json_room=False)
         if extra2:
             msg += extra2
+
+    # ✅ utrwal po kartach
+    GAME.magic.tiles = MagicTiles.from_container(container).tiles
+    GAME.pending = container.get("pending")
 
     if (not won) and int(roll_value) == 6:
         msg += " 🎲 Bonus: 6 → dodatkowy rzut!"
 
-    GAME["message"] = msg
-    push_history(msg)
+    GAME.players = [Player.from_dict(d) for d in players_dict]
 
-    to_pos = int(GAME["players"][idx]["pos"])
+    GAME.message = msg
+    GAME.push_history(msg)
 
-    if (not won) and (from_pos != to_pos or from_pos != land_pos):
-        GAME["last_move"] = {
+    to_pos = int(GAME.players[idx].pos)
+
+    GAME.move_count = int(GAME.move_count) + 1
+    if (from_pos != to_pos) or (from_pos != land_pos):
+        GAME.last_move = {
             "player": idx,
             "from": from_pos,
             "land": land_pos,
             "to": to_pos,
-            "move_count": int(GAME.get("move_count", 0)) + 1,
+            "move_count": GAME.move_count,
+            "won": bool(won),
         }
-        GAME["move_count"] = GAME["last_move"]["move_count"]
     else:
-        GAME["last_move"] = None
-        GAME["move_count"] = int(GAME.get("move_count", 0)) + 1
+        GAME.last_move = None
 
     if won:
         return redirect("/")
 
     if int(roll_value) != 6:
-        GAME["turn"] = (idx + 1) % len(GAME["players"])
+        GAME.turn = (idx + 1) % len(GAME.players)
 
     return redirect("/")
-
 
 
 @app.route("/new")
@@ -550,34 +616,35 @@ def new_game():
     mode = request.args.get("mode", "hotseat")
 
     if mode == "ai":
-        GAME["players"] = [
-            {"id": 0, "name": "Ty", "pos": 0, "color": "p-red", "is_bot": False, "card": None},
-            {"id": 1, "name": "Komputer", "pos": 0, "color": "p-blue", "is_bot": True, "card": None},
+        GAME.players = [
+            Player(pid=0, name="Ty", pos=0, color="p-red", is_bot=False, card=None),
+            Player(pid=1, name="Komputer", pos=0, color="p-blue", is_bot=True, card=None),
         ]
     else:
         n = int(request.args.get("players", 2))
         n = max(2, min(4, n))
         colors = ["p-red", "p-blue", "p-green", "p-purple"]
-        GAME["players"] = []
+        GAME.players = []
         for i in range(n):
-            GAME["players"].append({
-                "id": i,
-                "name": f"Gracz {i+1}",
-                "pos": 0,
-                "color": colors[i],
-                "is_bot": False,
-                "card": None
-            })
+            GAME.players.append(Player(
+                pid=i,
+                name=f"Gracz {i+1}",
+                pos=0,
+                color=colors[i],
+                is_bot=False,
+                card=None
+            ))
 
-    GAME["mode"] = mode
-    GAME["turn"] = 0
-    GAME["last_roll"] = None
-    GAME["last_player"] = 0
-    GAME["message"] = ""
-    GAME["history"] = []
-    GAME["move_count"] = 0
-    GAME["pending"] = None
-    mt_set(GAME, mt_reset(), for_json_room=False)
+    GAME.mode = mode
+    GAME.turn = 0
+    GAME.last_roll = None
+    GAME.last_player = 0
+    GAME.message = ""
+    GAME.history = []
+    GAME.move_count = 0
+    GAME.pending = None
+    GAME.last_move = None
+    GAME.magic = MagicTiles(MAGIC_TILES_TEMPLATE.copy())
 
     return redirect("/")
 
@@ -587,12 +654,12 @@ def set_colors():
     palette = ["p-red", "p-blue", "p-green", "p-purple"]
     used = set()
 
-    for i, pl in enumerate(GAME["players"]):
-        if GAME.get("mode") == "ai" and pl.get("is_bot"):
+    for i, pl in enumerate(GAME.players):
+        if GAME.mode == "ai" and pl.is_bot:
             continue
 
         key = f"color_{i}"
-        c = request.form.get(key, pl.get("color", "p-red"))
+        c = request.form.get(key, pl.color)
         if c not in palette:
             c = "p-red"
 
@@ -602,7 +669,7 @@ def set_colors():
                     c = alt
                     break
 
-        pl["color"] = c
+        pl.color = c
         used.add(c)
 
     return redirect("/")
@@ -610,10 +677,12 @@ def set_colors():
 
 @app.route("/howto")
 def howto():
-    return render_template("howto.html", mode=GAME.get("mode", "hotseat"))
+    return render_template("howto.html", mode=GAME.mode)
 
 
-# ----------------- Multiplayer -----------------
+# =========================
+#   Multiplayer
+# =========================
 
 @app.route("/mp")
 def mp_lobby():
@@ -630,7 +699,7 @@ def mp_create():
     while room_path(code).exists():
         code = gen_room_code()
 
-    mt = mt_reset()
+    mt = MagicTiles(MAGIC_TILES_TEMPLATE.copy())
     room = {
         "code": code,
         "created": int(time.time()),
@@ -645,10 +714,8 @@ def mp_create():
         "move_count": 0,
         "max_players": max_players,
         "winner": None,
-        "magic_tiles": {str(k): v for k, v in mt.items()},  # JSON-friendly dict
+        "magic_tiles": {str(k): v for k, v in mt.tiles.items()},
         "pending": None,
-
-        # ✅ NEW: do animacji (2-fazowej) w multiplayerze
         "last_move": None
     }
     save_room(code, room)
@@ -727,8 +794,6 @@ def mp_state(code):
     room["turn"] = int(room.get("turn", 0))
     room["last_player"] = int(room.get("last_player", 0))
     room["move_count"] = int(room.get("move_count", 0))
-
-    # last_move zostaje w JSON, bo room jest JSON-owalny
     return jsonify(room)
 
 
@@ -756,14 +821,11 @@ def mp_roll(code):
     if idx != int(room.get("turn", 0)):
         return jsonify({"error": "not_your_turn"}), 403
 
-    # ✅ FROM (do animacji)
     from_pos = int(room["players"][idx]["pos"])
 
     msg, roll_value, won = do_one_move_in_container(room, room["players"], idx, for_json_room=True)
-
     roll_value = int(roll_value)
 
-    # ✅ LAND (po samym rzucie, z zasadą "dokładnie 100")
     if from_pos + roll_value > BOARD_END:
         land_pos = from_pos
     else:
@@ -778,10 +840,7 @@ def mp_roll(code):
         room["message"] = msg
         room["history"].append(msg)
         room["history"] = room["history"][-8:]
-
-        # ✅ ruch nie jest domknięty → nie animujemy
         room["last_move"] = None
-
         save_room(code, room)
         return redirect(f"/mp/room/{code}")
 
@@ -802,10 +861,7 @@ def mp_roll(code):
     room["history"].append(msg)
     room["history"] = room["history"][-8:]
 
-    # ✅ TO (final po wężu/drabinie/magic)
     to_pos = int(room["players"][idx]["pos"])
-
-    # ✅ last_move zapisujemy TAKŻE przy won=True (żeby meta nie była "siup")
     if (to_pos != from_pos) or (land_pos != from_pos):
         room["last_move"] = {
             "player": idx,
@@ -853,9 +909,8 @@ def mp_snake_decision(code):
     choice = request.form.get("choice", "stay")
     pl = room["players"][idx]
 
-    # ✅ FROM (przed decyzją)
     from_pos = int(pl["pos"])
-    land_pos = int(pend["from"])  # pole węża (tam "stoi" przed wyborem)
+    land_pos = int(pend["from"])
 
     if choice == "back":
         pl["pos"] = pend["to"]
@@ -869,10 +924,8 @@ def mp_snake_decision(code):
     room["history"].append(msg)
     room["history"] = room["history"][-8:]
 
-    # ✅ TO (po decyzji)
     to_pos = int(pl["pos"])
 
-    # ✅ nowy ruch (animacja decyzji też ma się pojawić)
     room["move_count"] = int(room.get("move_count", 0)) + 1
     room["last_move"] = {
         "player": idx,
@@ -925,43 +978,34 @@ def mp_use_card(code):
         room["message"] = msg
         room["history"].append(msg)
         room["history"] = room["history"][-8:]
-
-        # ruchu nie ma → brak animacji
         room["last_move"] = None
-
         save_room(code, room)
         return redirect(f"/mp/room/{code}")
 
     if card == "TELEPORT_PLUS3":
-        # ✅ FROM (animacja)
         from_pos = int(pl["pos"])
-
         tentative = from_pos + 3
         if tentative > BOARD_END:
             return jsonify({"error": "must_hit_exact"}), 400
 
-        # teleport = schodzisz ze startu
         mark_magic_tile_used_if_leaving(room, pl, from_pos, for_json_room=True)
 
         pl["card"] = None
         pl["pos"] = tentative
         msg = f"{pl['name']}: używa TELEPORT +3: {from_pos} -> {tentative}"
 
-        # land = tentative (po użyciu karty)
         land_pos = tentative
 
         if is_ladder(tentative):
             after = SNAKE_LADDERS[tentative]
             pl["pos"] = after
             msg += f" 🪜 Drabina! {tentative} -> {after}"
-
         elif is_snake(tentative):
             if try_start_snake_pending(room, idx, pl):
                 msg += " 🃏 Masz ANTY WĄŻ — wybierz: zostać czy cofnąć się?"
                 room["message"] = msg
                 room["history"].append(msg)
                 room["history"] = room["history"][-8:]
-
                 room["last_move"] = None
                 save_room(code, room)
                 return redirect(f"/mp/room/{code}")
@@ -978,10 +1022,7 @@ def mp_use_card(code):
         room["history"].append(msg)
         room["history"] = room["history"][-8:]
 
-        # ✅ TO (final)
         to_pos = int(pl["pos"])
-
-        # ✅ zwiększ move_count i ustaw last_move do animacji
         room["move_count"] = int(room.get("move_count", 0)) + 1
         room["last_move"] = {
             "player": idx,
