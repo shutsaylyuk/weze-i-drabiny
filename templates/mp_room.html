@@ -4,18 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Węże i drabiny • Multiplayer</title>
+
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
   <style>
+    /* TWOJE LUDZIKI - NIERUSZANE */
     .pawn {
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 28px !important;
+      height: 38px !important;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
       will-change: transform, left, top;
-      position: relative;
+      z-index: 100 !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      display: block !important;
+    }
+
+    .pawn::before, .pawn::after {
+      content: "" !important;
+      display: block !important;
+      position: absolute !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+      background: radial-gradient(circle at 30% 30%, var(--p-light), var(--p-dark)) !important;
+    }
+    .pawn::before { top: 0; width: 40% !important; height: 40% !important; border-radius: 50% !important; }
+    .pawn::after { bottom: 0; width: 100% !important; height: 55% !important; border-radius: 50% 50% 35% 35% !important; }
+
+    .cell .pawn { position: absolute !important; }
+    #start-zone .pawn { position: relative !important; flex: 0 0 auto; }
+
+    /* PRZYWRÓCENIE WYGLĄDU PLANSZY */
+    .cell.magic { background-color: #fffce0 !important; }
+
+    .target {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      font-size: 10px;
+      font-weight: bold;
+      color: #666;
+      background: rgba(255,255,255,0.7);
+      padding: 1px 3px;
+      border-radius: 3px;
       z-index: 10;
     }
-    .pawn.no-transition { transition: none !important; }
-    .pawn.hidden { opacity: 0 !important; }
-    .btn.loading { opacity: 0.5; pointer-events: none; }
 
+    /* CARD HIGHLIGHT Z TWOJEGO PLIKU */
     .card-highlight {
       margin-top: 15px;
       padding: 12px;
@@ -23,6 +58,11 @@
       border-radius: 8px;
       background: rgba(var(--accent-rgb), 0.1);
     }
+
+    .pawn.no-transition { transition: none !important; }
+    .pawn.hidden { opacity: 0 !important; }
+    .btn.loading { opacity: 0.5; pointer-events: none; }
+    .disabled { pointer-events: none; opacity: 0.6; }
   </style>
 </head>
 
@@ -46,13 +86,12 @@
     {% set game_started = (room.players|length >= 2) %}
 
     <form action="/mp/room/{{ room.code }}/roll" method="post" id="roll-form">
-      <button id="roll-btn"
+      <button type="submit" id="roll-btn"
               class="btn {% if not can_roll or room.pending or not game_started or not is_my_turn %}disabled{% endif %}"
               {% if not can_roll or room.pending or not game_started or not is_my_turn %}disabled{% endif %}>
         🎲 Rzuć
       </button>
     </form>
-
     <a class="btn" href="/mp">🚪 Lobby</a>
   </div>
 </header>
@@ -140,6 +179,7 @@
             data-n="{{ n }}">
 
             <span class="number">{{ n }}</span>
+
             {% if n in snakes_ladders %}
               <div class="center-icon">{{ '🪜' if snakes_ladders[n] > n else '🐍' }}</div>
               <div class="target">{{ snakes_ladders[n] }}</div>
@@ -171,7 +211,8 @@
     cells: {},
     pawns: {},
     startZone: document.getElementById('start-zone'),
-    rollBtn: document.getElementById('roll-btn')
+    rollBtn: document.getElementById('roll-btn'),
+    form: document.getElementById('roll-form')
   };
 
   function updateCache() {
@@ -182,17 +223,18 @@
   async function animate() {
     if (!CONFIG.lastMove) return;
     const { player, from, land, to, move_count } = CONFIG.lastMove;
-    const key = `mp_anim_v11_${move_count}_${player}`;
+    const key = `mp_final_anim_${move_count}_${player}`;
 
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
 
+    updateCache();
     const pawn = DOM.pawns[player];
     if (!pawn) return;
 
     pawn.classList.add('no-transition', 'hidden');
-    const startCell = from === 0 ? DOM.startZone : DOM.cells[from];
-    if (startCell) startCell.appendChild(pawn);
+    const startPos = from === 0 ? DOM.startZone : DOM.cells[from];
+    if (startPos) startPos.appendChild(pawn);
     pawn.offsetHeight;
     pawn.classList.remove('no-transition', 'hidden');
 
@@ -224,12 +266,14 @@
   document.addEventListener("DOMContentLoaded", async () => {
     updateCache();
     if (DOM.rollBtn) DOM.rollBtn.classList.add('disabled');
+
     await animate();
 
     if (DOM.rollBtn && CONFIG.isMyTurn && CONFIG.gameStarted && !CONFIG.isPending && CONFIG.canRoll) {
         DOM.rollBtn.classList.remove('disabled');
         DOM.rollBtn.removeAttribute('disabled');
     }
+
     setInterval(checkServer, 2000);
   });
 </script>

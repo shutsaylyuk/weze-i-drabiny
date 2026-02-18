@@ -267,16 +267,23 @@ body{
   margin-top: 10px;
 }
 
-/* START pawn */
-.start-box .pawn{
-  position: relative;
-  width: 30px;
-  height: 40px;
-  flex: 0 0 auto;
+/* ===== PAWNS (WSPÓLNE: START + PLANSZA) ===== */
+/* NIEZBĘDNA POPRAWKA: pionek rysuje się wszędzie (nie tylko w start-box),
+   a na planszy jest absolute (sloty działają). */
+
+.pawn{
+  transition: transform 160ms ease;
+  will-change: transform;
+  pointer-events: none;
+  z-index: 10;
+
+  width: 28px;
+  height: 38px;
 }
 
-.start-box .pawn::before,
-.start-box .pawn::after{
+/* rysowanie “ludzika” działa wszędzie */
+.pawn::before,
+.pawn::after{
   content: "";
   position: absolute;
   left: 50%;
@@ -284,7 +291,7 @@ body{
   background: radial-gradient(circle at 30% 30%, var(--p-light), var(--p-dark));
 }
 
-.start-box .pawn::before{
+.pawn::before{
   top: 0;
   width: 40%;
   height: 40%;
@@ -292,7 +299,7 @@ body{
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 
-.start-box .pawn::after{
+.pawn::after{
   bottom: 0;
   width: 100%;
   height: 55%;
@@ -300,6 +307,14 @@ body{
   box-shadow:
     inset 0 -4px 6px rgba(0,0,0,0.4),
     0 4px 6px rgba(0,0,0,0.4);
+}
+
+/* START pawn – w start-box zostaje relative, żeby ładnie układał się w rzędzie */
+.start-box .pawn{
+  position: relative;
+  width: 30px;
+  height: 40px;
+  flex: 0 0 auto;
 }
 
 /* ===== BOARD ===== */
@@ -321,8 +336,6 @@ body{
 
   border: 2px solid #111;
   background: #fff;
-
-
 }
 
 /* Żeby po scale nie robiło dziwnych przesunięć, dajemy miejsce */
@@ -390,6 +403,7 @@ body{
 
 /* ===== PAWNS ON BOARD (PIN) ===== */
 
+/* NIEZBĘDNA POPRAWKA: na planszy pionek musi być absolute, żeby sloty działały */
 .cell .pawn{
   position: absolute;
   width: 28px;
@@ -397,39 +411,11 @@ body{
   z-index: 5;
 }
 
-/* sloty (max 4 graczy) */
-.cell .slot-0{ left: 8%;  bottom: 8%; }
-.cell .slot-1{ right: 8%; bottom: 8%; }
-.cell .slot-2{ left: 8%;  top: 8%; }
-.cell .slot-3{ right: 8%; top: 8%; }
-
-.cell .pawn::before{
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40%;
-  height: 40%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, var(--p-light), var(--p-dark));
-  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-}
-
-.cell .pawn::after{
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  height: 55%;
-  border-radius: 50% 50% 35% 35%;
-  background: radial-gradient(circle at 30% 30%, var(--p-light), var(--p-dark));
-  box-shadow:
-    inset 0 -4px 6px rgba(0,0,0,0.4),
-    0 4px 6px rgba(0,0,0,0.4);
-}
+/* Slotowanie pionków - upewnij się, że te wartości są stałe */
+.cell .slot-0 { left: 8%;  bottom: 8%;  top: auto; right: auto; }
+.cell .slot-1 { right: 8%; bottom: 8%;  top: auto; left: auto; }
+.cell .slot-2 { left: 8%;  top: 8%;     bottom: auto; right: auto; }
+.cell .slot-3 { right: 8%; top: 8%;     bottom: auto; left: auto; }
 
 /* Pawn colors */
 .p-red   { --p-light: #ff5a5a; --p-dark: #990000; }
@@ -499,14 +485,10 @@ body{
   outline-offset: -4px;
 }
 
-.cell .pawn{
-  transition: transform 160ms ease;
-}
-
+/* lekkie “podskoczenie” na kroku */
 .cell.step .pawn{
   transform: translateY(-2px);
 }
-
 
 /* ===== RESPONSIVE ===== */
 

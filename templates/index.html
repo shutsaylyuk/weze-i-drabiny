@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Węże i drabiny</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=move_count) }}">
   <style>
+
     .pawn {
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
       will-change: transform, left, top;
       position: relative;
       z-index: 10;
@@ -15,6 +16,8 @@
     .pawn.no-transition { transition: none !important; }
     .pawn.hidden { opacity: 0 !important; }
     .btn.loading { opacity: 0.5; pointer-events: none; }
+
+    .cell.step .pawn { transform: none !important; }
 
     .card-action-box {
       margin-top: 15px;
@@ -101,9 +104,9 @@
     {% if pending and pending.get("type") == "snake_choice" %}
       <div class="card" style="margin-top:12px; padding:12px; border: 2px solid orange;">
         <b>🐍 Decyzja:</b>
-        <p style="font-size: 0.85em; margin-bottom: 8px;">Masz kartę ANTY WĄŻ! Użyć jej?</p>
+        <p style="font-size: 0.85em; margin-bottom: 8px;">Użyć karty ANTY WĄŻ?</p>
         <form action="/snake_decision" method="post" style="display:flex; gap:8px;">
-          <button class="btn btn-sm" name="choice" value="stay">Użyj karty</button>
+          <button class="btn btn-sm" name="choice" value="stay">Użyj</button>
           <button class="btn secondary btn-sm" name="choice" value="back">Spadnij</button>
         </form>
       </div>
@@ -167,7 +170,7 @@
 
 <script>
   const CONFIG = {
-    stepDelay: 200,
+    stepDelay: 250,
     lastMove: {{ (last_move|tojson) if last_move else "null" }},
     isBotTurn: {{ "true" if bot_turn else "false" }},
     gameWon: {{ "true" if won else "false" }},
@@ -197,7 +200,7 @@
   async function animate() {
     if (!CONFIG.lastMove) return;
     const { player, from, land, to, move_count } = CONFIG.lastMove;
-    const key = `anim_vFinal_${move_count}_${player}`;
+    const key = `fix_v112363_${move_count}_${player}`;
 
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, 'true');
@@ -208,17 +211,15 @@
     isAnimatingGlobal = true;
 
 
-    pawn.classList.add('no-transition', 'hidden');
     const startCell = from === 0 ? DOM.startZone : DOM.cells[from];
     if (startCell) startCell.appendChild(pawn);
 
+    pawn.offsetHeight;
 
     await new Promise(r => requestAnimationFrame(() => {
-        pawn.offsetHeight;
-        pawn.classList.remove('no-transition', 'hidden');
+        pawn.classList.remove('no-transition');
         r();
     }));
-
 
     for (let i = from + 1; i <= land; i++) {
       const cell = DOM.cells[i];
@@ -228,9 +229,8 @@
       }
     }
 
-
     if (land !== to) {
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 450));
       const finalCell = DOM.cells[to];
       if (finalCell) finalCell.appendChild(pawn);
     }
@@ -240,9 +240,7 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     initCache();
-
     if (DOM.rollBtn) DOM.rollBtn.classList.add('disabled');
-
     await animate();
 
     if (DOM.rollBtn && !CONFIG.isBotTurn && !CONFIG.gameWon && !CONFIG.isPending) {

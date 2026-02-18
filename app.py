@@ -8,15 +8,7 @@ from flask import Flask, render_template, redirect, request, jsonify, make_respo
 
 app = Flask(__name__)
 
-@app.after_request
-def add_header(response):
-    # Jeśli to plik statyczny (CSS, JS, obrazki), cache'uj go na rok
-    if request.path.startswith('/static'):
-        response.headers['Cache-Control'] = 'public, max-age=31536000'
-    else:
-        # Stanu gry nie cache'uj w ogóle, żeby zawsze był świeży
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    return response
+
 
 BOARD_END = 100
 
@@ -421,6 +413,8 @@ class Game:
 
         self.touch()
 
+        did_teleport = False
+
         if not self.players or self.anyone_won():
             return
 
@@ -470,9 +464,10 @@ class Game:
                 self.message = msg
                 self.push_history(msg)
 
-                if int(bot.pos) != BOARD_END:
-                    self.turn = (idx + 1) % len(self.players)
-                return
+                did_teleport=True
+
+                if int(bot.pos) == BOARD_END:
+                    return
 
         # normalny rzut
         msg, roll_value, won, from_pos, land_pos, to_pos = self._raw_move(idx)
@@ -1036,5 +1031,5 @@ def mp_use_card(code):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=11901)
+    app.run(host="0.0.0.0", port=12363)
 
