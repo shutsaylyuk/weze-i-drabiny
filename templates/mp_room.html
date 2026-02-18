@@ -5,6 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Węże i drabiny • Multiplayer</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .pawn {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      will-change: transform, left, top;
+      position: relative;
+      z-index: 10;
+    }
+    .pawn.no-transition { transition: none !important; }
+    .pawn.hidden { opacity: 0 !important; }
+    .btn.loading { opacity: 0.5; pointer-events: none; }
+
+    .card-highlight {
+      margin-top: 15px;
+      padding: 12px;
+      border: 2px solid var(--accent);
+      border-radius: 8px;
+      background: rgba(var(--accent-rgb), 0.1);
+    }
+  </style>
 </head>
 
 <body>
@@ -12,33 +31,27 @@
 <header class="app-header">
   <div class="brand">
     <div class="title">Węże i drabiny</div>
-    <div class="subtitle">Multiplayer • pokój <b>{{ room.code }}</b></div>
+    <div class="subtitle">Multiplayer • Pokój: <b>{{ room.code }}</b></div>
   </div>
 
-  <nav class="tabs" aria-label="Tryby gry">
+  <nav class="tabs">
     <a class="tab" href="/new?mode=hotseat&players=2">Hot-seat</a>
     <a class="tab" href="/new?mode=ai">Vs komputer</a>
     <a class="tab active" href="/mp">Multiplayer</a>
   </nav>
 
   <div class="actions">
-    <form action="/mp/room/{{ room.code }}/roll" method="post" style="display:inline;">
-      <button class="btn {% if not can_roll or room.pending %}disabled{% endif %}"
-              {% if not can_roll or room.pending %}disabled{% endif %}>
+    {% set my_player = room.players[my_idx] if my_idx is not none else none %}
+    {% set is_my_turn = (room.turn|int == my_idx) %}
+    {% set game_started = (room.players|length >= 2) %}
+
+    <form action="/mp/room/{{ room.code }}/roll" method="post" id="roll-form">
+      <button id="roll-btn"
+              class="btn {% if not can_roll or room.pending or not game_started or not is_my_turn %}disabled{% endif %}"
+              {% if not can_roll or room.pending or not game_started or not is_my_turn %}disabled{% endif %}>
         🎲 Rzuć
       </button>
     </form>
-
-    {% set my_card = None %}
-    {% if my_idx is not none and room.players and my_idx < (room.players|length) %}
-      {% set my_card = room.players[my_idx].card %}
-    {% endif %}
-
-    {% if my_pid and (not room.pending) and (not room.winner) and my_card and my_card == "TELEPORT_PLUS3" and (room.turn|int == my_idx) %}
-      <form action="/mp/room/{{ room.code }}/use_card" method="post" style="display:inline;">
-        <button class="btn secondary">🃏 Użyj karty (TELEPORT +3)</button>
-      </form>
-    {% endif %}
 
     <a class="btn" href="/mp">🚪 Lobby</a>
   </div>
@@ -46,77 +59,50 @@
 
 <div class="layout">
   <aside class="info card">
-    <div class="info-row"><b>Kod pokoju:</b> {{ room.code }}</div>
-    <div class="info-row"><b>Twój ID:</b> {{ my_pid or "brak (wejdź z lobby)" }}</div>
-
-    {% set n_players = room.players|length %}
-    {% set mc = room.move_count|int %}
-    {% set round_num = 1 if mc == 0 else ((mc - 1) // n_players) + 1 %}
-
-    <div class="info-row"><b>Runda:</b> {{ round_num }}</div>
     <div class="info-row">
-      <b>Ruch:</b>
-      {{ room.players[room.turn|int].name if room.players and room.turn is not none else "-" }}
+        <b>Runda:</b> {{ ((room.move_count|int - 1) // (room.players|length)) + 1 if room.move_count|int > 0 else 1 }}
+        | <b>Ruch:</b> {{ room.players[room.turn|int].name if room.players else "-" }}
     </div>
-
-    <div id="anim-status" class="muted" style="margin-top:6px;"></div>
-
-    <div class="spacer"></div>
 
     {% if room.message %}
-      <div id="msgBox" class="card" style="padding:10px;">{{ room.message }}</div>
+      <div class="spacer"></div>
+      <div class="card" style="padding:10px;">{{ room.message }}</div>
     {% endif %}
 
-    <div class="spacer"></div>
-
-    <div class="info-row">
-      <b>Twoja karta:</b>
-      {% if my_card %}
-        {{ my_card|replace("_"," ") }}
-      {% else %}
-        brak
-      {% endif %}
-    </div>
-
-    {% if my_card == "ANTY_WAZ" %}
-      <div class="muted" style="margin-top:6px;">
-        ANTY WĄŻ aktywuje się tylko, gdy staniesz na wężu (wtedy pojawi się decyzja).
+    {% if my_player and my_player.card and my_player.card != "ANTY_WAZ" and not room.winner and not room.pending and is_my_turn and game_started %}
+      <div class="card-highlight">
+        <b>🃏 Twoja karta:</b> {{ my_player.card|replace('_', ' ') }}
+        <form action="/mp/room/{{ room.code }}/use_card" method="post" style="margin-top:8px;">
+          <button class="btn btn-sm" style="width:100%;">Użyj karty</button>
+        </form>
       </div>
     {% endif %}
 
     {% if room.pending and room.pending.type == "snake_choice" %}
-      <div class="card" style="margin-top:12px; padding:12px;">
-        <b>🐍 Wąż! Decyzja:</b>
-        <div class="muted" style="margin-top:6px;">
-          Stoisz na <b>{{ room.pending.from }}</b>.
-          Normalnie spadasz na <b>{{ room.pending.to }}</b>.
-        </div>
-
+      <div class="card-highlight" style="border-color: #ff4757; background: rgba(255, 71, 87, 0.1);">
+        <b>🐍 Decyzja na wężu:</b>
         {% if my_pid and room.pending.player_id == my_pid %}
-          <div style="display:flex; gap:8px; margin-top:10px;">
-            <form action="/mp/room/{{ room.code }}/snake_decision" method="post">
+          <p style="font-size:0.85em; margin: 8px 0;">Masz kartę ANTY WĄŻ. Co robisz?</p>
+          <div style="display:flex; gap:8px;">
+            <form action="/mp/room/{{ room.code }}/snake_decision" method="post" style="flex:1;">
               <input type="hidden" name="choice" value="stay">
-              <button class="btn">🃏 Zostań (ANTY WĄŻ)</button>
+              <button class="btn btn-sm" style="width:100%; background: #2ed573;">Użyj karty</button>
             </form>
-
-            <form action="/mp/room/{{ room.code }}/snake_decision" method="post">
+            <form action="/mp/room/{{ room.code }}/snake_decision" method="post" style="flex:1;">
               <input type="hidden" name="choice" value="back">
-              <button class="btn secondary">⬇ Cofnij się</button>
+              <button class="btn secondary btn-sm" style="width:100%;">Spadnij</button>
             </form>
           </div>
         {% else %}
-          <div class="muted" style="margin-top:10px;">
-            Czekamy na decyzję gracza: {{ room.pending.player_id }}
-          </div>
+          <p style="font-size:0.85em; margin-top:8px;">Czekamy na decyzję gracza...</p>
         {% endif %}
       </div>
     {% endif %}
 
     <div class="spacer"></div>
-
     <ul class="positions" id="posList">
       {% for p in room.players %}
-        <li>
+        <li class="{% if room.turn|int == loop.index0 %}active-player{% endif %}">
           <span class="dot {{ p.color }}"></span>
           <span class="pname">{{ p.name }}{% if p.id == my_pid %} (Ty){% endif %}</span>
           <span class="ppos">pole: <b>{{ p.pos }}</b></span>
@@ -124,209 +110,128 @@
       {% endfor %}
     </ul>
 
-    <div class="spacer"></div>
-
     <div class="history">
-      {% if room.history and room.history|length > 0 %}
-        <ul>
-          {% for h in room.history|reverse %}
-            <li>{{ h }}</li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <div class="muted">Brak ruchów jeszcze.</div>
-      {% endif %}
+      <b>Historia:</b>
+      <ul>
+        {% for h in room.history|reverse %}<li>{{ h }}</li>{% endfor %}
+      </ul>
     </div>
   </aside>
 
   <main>
     <div class="board-wrapper">
-
-      <!-- START -->
       <div class="start-box">
         <div class="start-title">START</div>
-        <div class="start-pawns">
-          {% for p in room.players %}
-            {% if p.pos|int == 0 %}
-              <!-- kluczowe dla animacji -->
-              <div class="pawn {{ p.color }}" data-player="{{ loop.index0 }}" title="{{ p.name }}"></div>
-            {% endif %}
-          {% endfor %}
+        <div class="start-pawns" id="start-zone">
+          {% for p in room.players %}{% if p.pos|int == 0 %}
+            <div class="pawn {{ p.color }} slot-{{ loop.index0 }}" data-player="{{ loop.index0 }}"></div>
+          {% endif %}{% endfor %}
         </div>
       </div>
 
-      <!-- BOARD -->
-      <div class="board" aria-label="Plansza 10 na 10">
-        {% set last_idx = room.last_player|int %}
-        {% set mt = room.magic_tiles if room.magic_tiles else {} %}
-
+      <div class="board">
         {% for idx in range(100) %}
-          {% set row = idx // 10 %}
-          {% set col = idx % 10 %}
-          {% set r = 9 - row %}
-
-          {% if (r % 2) == 0 %}
-            {% set n = r*10 + col + 1 %}
-          {% else %}
-            {% set n = r*10 + (10 - col) %}
-          {% endif %}
-
-          {% set key = n|string %}
-          {% set mt_state = mt.get(key) %}
+          {% set row = 9 - (idx // 10) %}{% set col = idx % 10 %}
+          {% if row % 2 == 0 %}{% set n = row * 10 + col + 1 %}{% else %}{% set n = row * 10 + (10 - col) %}{% endif %}
 
           <div class="cell
-            {% if (key in mt) and (mt_state != "USED") %} magic {% endif %}
-            {% if n in snakes_ladders %}
-              {% if snakes_ladders[n] > n %} ladder {% else %} snake {% endif %}
-            {% endif %}
-            {% if room.players and (room.players[last_idx].pos|int == n) and (n > 0) %} highlight {% endif %}
-          " data-n="{{ n }}">
+            {% if (n|string in room.magic_tiles) and (room.magic_tiles[n|string] != 'USED') %}magic{% endif %}
+            {% if n in snakes_ladders %}{{ 'ladder' if snakes_ladders[n] > n else 'snake' }}{% endif %}"
+            data-n="{{ n }}">
 
             <span class="number">{{ n }}</span>
-
             {% if n in snakes_ladders %}
-              {% if snakes_ladders[n] > n %}
-                <div class="center-icon">🪜</div>
-              {% else %}
-                <div class="center-icon">🐍</div>
-              {% endif %}
+              <div class="center-icon">{{ '🪜' if snakes_ladders[n] > n else '🐍' }}</div>
               <div class="target">{{ snakes_ladders[n] }}</div>
             {% endif %}
 
-            <!-- pionki na planszy -->
-            {% for pl in room.players %}
-              {% if pl.pos|int == n and n > 0 %}
-                <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}"
-                     data-player="{{ loop.index0 }}"
-                     title="{{ pl.name }}"></div>
-              {% endif %}
-            {% endfor %}
-
+            {% for pl in room.players %}{% if pl.pos|int == n and n > 0 %}
+              <div class="pawn {{ pl.color }} slot-{{ loop.index0 }}" data-player="{{ loop.index0 }}"></div>
+            {% endif %}{% endfor %}
           </div>
         {% endfor %}
       </div>
-
     </div>
   </main>
 </div>
 
 <script>
-  // ===== Animacja (2 fazy) =====
-  let lastSeenMoveCount = {{ room.move_count|int }};
-  let inFlight = false;
-  let isAnimating = false;
+  const CONFIG = {
+    stepDelay: 250,
+    lastMove: {{ (room.last_move|tojson) if room.last_move else "null" }},
+    version: {{ room.version or 0 }},
+    playerCount: {{ room.players|length }},
+    isPending: {{ 'true' if room.pending else 'false' }},
+    isMyTurn: {{ 'true' if (room.turn|int == my_idx) else 'false' }},
+    gameStarted: {{ 'true' if (room.players|length >= 2) else 'false' }},
+    canRoll: {{ 'true' if can_roll else 'false' }}
+  };
 
-  const statusEl = document.getElementById("anim-status");
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const DOM = {
+    cells: {},
+    pawns: {},
+    startZone: document.getElementById('start-zone'),
+    rollBtn: document.getElementById('roll-btn')
+  };
 
-  function setStatus(t){ if(statusEl) statusEl.textContent = t || ""; }
-
-  function cellEl(n){ return document.querySelector(`.cell[data-n="${n}"]`); }
-  function pawnEl(playerIndex){ return document.querySelector(`.pawn[data-player="${playerIndex}"]`); }
-  function startBoxEl(){ return document.querySelector(".start-box .start-pawns"); }
-
-  async function stepWalk(pawn, fromPos, toPos, stepDelay=260){
-    const start = Math.max(1, fromPos + 1);
-    const total = Math.max(0, toPos - Math.max(0, fromPos));
-
-    for(let p = start; p <= toPos; p++){
-      const cell = cellEl(p);
-      if(!cell) break;
-
-      const done = p - Math.max(0, fromPos);
-      setStatus(`Przechodzę: ${done}/${total}`);
-
-      cell.appendChild(pawn);
-      await sleep(stepDelay);
-    }
-    setStatus("");
+  function updateCache() {
+    document.querySelectorAll('.cell[data-n]').forEach(c => DOM.cells[c.dataset.n] = c);
+    document.querySelectorAll('.pawn[data-player]').forEach(p => DOM.pawns[p.dataset.player] = p);
   }
 
-  async function animateMove2Phase(playerIndex, fromPos, landPos, toPos){
-    const pawn = pawnEl(playerIndex);
-    if(!pawn) return;
+  async function animate() {
+    if (!CONFIG.lastMove) return;
+    const { player, from, land, to, move_count } = CONFIG.lastMove;
+    const key = `mp_anim_v11_${move_count}_${player}`;
 
-    isAnimating = true;
-
-    // ustaw pionek na from (żeby nie było teleportu)
-    if(fromPos <= 0){
-      const sb = startBoxEl(); if(sb) sb.appendChild(pawn);
-    } else {
-      const fc = cellEl(fromPos); if(fc) fc.appendChild(pawn);
-    }
-
-    // faza 1: dojście na land
-    if(landPos > fromPos){
-      await stepWalk(pawn, fromPos, landPos, 260);
-    }
-
-    // faza 2: skok wąż/drabina/teleport
-    if(toPos !== landPos){
-      setStatus("Skok...");
-      const tc = cellEl(toPos);
-      if(tc){
-        await sleep(140);
-        tc.appendChild(pawn);
-        await sleep(220);
-      }
-      setStatus("");
-    }
-
-    isAnimating = false;
-  }
-
-  // Animacja po wejściu (po redirect)
-  document.addEventListener("DOMContentLoaded", async () => {
-    const lastMove = {{ (room.last_move|tojson) if room.last_move else "null" }};
-    if(!lastMove || !lastMove.move_count) return;
-
-    // zabezpieczenie: nie animuj tego samego po refreshu
-    const key = `mp_anim_${lastMove.move_count}_${lastMove.player}_${lastMove.from}_${lastMove.land}_${lastMove.to}`;
-    if(sessionStorage.getItem(key)) return;
+    if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
 
-    lastSeenMoveCount = lastMove.move_count;
+    const pawn = DOM.pawns[player];
+    if (!pawn) return;
 
-    await animateMove2Phase(
-      lastMove.player,
-      lastMove.from ?? 0,
-      (lastMove.land ?? lastMove.to ?? 0),
-      (lastMove.to ?? lastMove.land ?? 0)
-    );
-  });
+    pawn.classList.add('no-transition', 'hidden');
+    const startCell = from === 0 ? DOM.startZone : DOM.cells[from];
+    if (startCell) startCell.appendChild(pawn);
+    pawn.offsetHeight;
+    pawn.classList.remove('no-transition', 'hidden');
 
-  // Polling dla innych graczy
-  async function poll(){
-    if(inFlight) return;
-    inFlight = true;
-
-    try{
-      const r = await fetch(`/mp/room/{{ room.code }}/state`, { cache: "no-store" });
-      const data = await r.json(); // data = cały room
-
-      const mc = Number(data.move_count || 0);
-
-      // ✅ Gdy ktoś wykonał ruch -> natychmiast odśwież stronę
-      // (to daje efekt "od razu się aktualizuje")
-      if(mc > lastSeenMoveCount){
-        lastSeenMoveCount = mc;
-
-        // opcjonalnie: jeśli wolisz NIE przerywać animacji, odkomentuj if
-        // if(isAnimating) return;
-
-        window.location.reload();
-        return;
+    for (let i = from + 1; i <= land; i++) {
+      const cell = DOM.cells[i];
+      if (cell) {
+        cell.appendChild(pawn);
+        await new Promise(r => setTimeout(r, CONFIG.stepDelay));
       }
-    } catch(e){
-      // cicho
-    } finally {
-      inFlight = false;
+    }
+
+    if (land !== to) {
+      await new Promise(r => setTimeout(r, 450));
+      const finalCell = DOM.cells[to];
+      if (finalCell) finalCell.appendChild(pawn);
     }
   }
 
-  // ✅ szybciej niż 1s
-  setInterval(poll, 250);
-</script>
+  async function checkServer() {
+    try {
+      const res = await fetch(`/mp/room/{{ room.code }}/state?t=${Date.now()}`);
+      const data = await res.json();
+      if (data.version > CONFIG.version || data.players.length !== CONFIG.playerCount) {
+        window.location.reload();
+      }
+    } catch (e) {}
+  }
 
+  document.addEventListener("DOMContentLoaded", async () => {
+    updateCache();
+    if (DOM.rollBtn) DOM.rollBtn.classList.add('disabled');
+    await animate();
+
+    if (DOM.rollBtn && CONFIG.isMyTurn && CONFIG.gameStarted && !CONFIG.isPending && CONFIG.canRoll) {
+        DOM.rollBtn.classList.remove('disabled');
+        DOM.rollBtn.removeAttribute('disabled');
+    }
+    setInterval(checkServer, 2000);
+  });
+</script>
 </body>
 </html>
