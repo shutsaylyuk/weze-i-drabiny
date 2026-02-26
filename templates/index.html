@@ -40,9 +40,20 @@
   </div>
 
   <nav class="tabs" aria-label="Tryby gry">
-    <a class="tab {% if mode=='hotseat' %}active{% endif %}" href="/new?mode=hotseat&players=2">Hot-seat</a>
-    <a class="tab {% if mode=='ai' %}active{% endif %}" href="/new?mode=ai">Vs komputer</a>
-    <a class="tab" href="/mp">Multiplayer</a>
+    <a class="tab {% if mode == 'hotseat' %}active{% endif %}"
+   href="/new?mode=hotseat&players=2">
+   Hot-seat
+    </a>
+
+    <a class="tab {% if mode == 'ai' %}active{% endif %}"
+       href="/ai">
+       Vs komputer
+    </a>
+
+    <a class="tab {% if mode == 'mp' %}active{% endif %}"
+       href="/mp">
+       Multiplayer
+    </a>
   </nav>
 
   <div class="actions">
@@ -100,7 +111,21 @@
         </li>
       {% endfor %}
     </ul>
-
+    {% if pending and pending.type == "dice_choice" %}
+  <div class="card-highlight">
+    <b>🎲 Wyrzucono:</b> {{ pending.dice[0] }} i {{ pending.dice[1] }}
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <form action="/dice_choice" method="post" style="flex:1;">
+        <input type="hidden" name="swap" value="0">
+        <button class="btn btn-sm" style="width:100%;">Ty(1)={{ pending.dice[0] }}, Ty(2)={{ pending.dice[1] }}</button>
+      </form>
+      <form action="/dice_choice" method="post" style="flex:1;">
+        <input type="hidden" name="swap" value="1">
+        <button class="btn secondary btn-sm" style="width:100%;">Ty(1)={{ pending.dice[1] }}, Ty(2)={{ pending.dice[0] }}</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
     {% if pending and pending.get("type") == "snake_choice" %}
       <div class="card" style="margin-top:12px; padding:12px; border: 2px solid orange;">
         <b>🐍 Decyzja:</b>
@@ -113,22 +138,43 @@
     {% endif %}
 
     <div class="spacer"></div>
-    <div class="info-row"><b>Kolory pionków:</b></div>
-    <form class="colors-form" action="/set_colors" method="post">
-      {% for p in players %}
-        {% if not p.get('is_bot') %}
-          <label class="color-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-            <span class="pname" style="font-size:0.9em;">{{ p.name }}</span>
-            <select name="color_{{ loop.index0 }}" onchange="this.form.submit()">
-              <option value="p-red" {% if p.color == "p-red" %}selected{% endif %}>Czerwony</option>
-              <option value="p-blue" {% if p.color == "p-blue" %}selected{% endif %}>Niebieski</option>
-              <option value="p-green" {% if p.color == "p-green" %}selected{% endif %}>Zielony</option>
-              <option value="p-purple" {% if p.color == "p-purple" %}selected{% endif %}>Fioletowy</option>
-            </select>
-          </label>
-        {% endif %}
-      {% endfor %}
-    </form>
+<div class="info-row"><b>Kolory pionków:</b></div>
+
+<form class="colors-form" action="/set_colors" method="post">
+
+  {# ===== AI DOUBLE: 1 kolor dla obu pionków człowieka ===== #}
+  {% if mode == 'ai' and variant == 'double' %}
+    <label class="color-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+      <span class="pname" style="font-size:0.9em;">Ty (oba pionki)</span>
+      <select name="color_0" onchange="this.form.submit()">
+        <option value="p-red" {% if players[0].color == "p-red" %}selected{% endif %}>Czerwony</option>
+        <option value="p-blue" {% if players[0].color == "p-blue" %}selected{% endif %}>Niebieski</option>
+        <option value="p-green" {% if players[0].color == "p-green" %}selected{% endif %}>Zielony</option>
+        <option value="p-purple" {% if players[0].color == "p-purple" %}selected{% endif %}>Fioletowy</option>
+      </select>
+    </label>
+
+    <div style="font-size:0.8em; color:#666; margin-top:4px;">
+      AI dostaje automatycznie inny kolor.
+    </div>
+
+  {# ===== pozostałe tryby: stara logika (select dla każdego człowieka) ===== #}
+  {% else %}
+    {% for p in players %}
+      {% if not p.get('is_bot') %}
+        <label class="color-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+          <span class="pname" style="font-size:0.9em;">{{ p.name }}</span>
+          <select name="color_{{ loop.index0 }}" onchange="this.form.submit()">
+            <option value="p-red" {% if p.color == "p-red" %}selected{% endif %}>Czerwony</option>
+            <option value="p-blue" {% if p.color == "p-blue" %}selected{% endif %}>Niebieski</option>
+            <option value="p-green" {% if p.color == "p-green" %}selected{% endif %}>Zielony</option>
+            <option value="p-purple" {% if p.color == "p-purple" %}selected{% endif %}>Fioletowy</option>
+          </select>
+        </label>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+</form>
 
     <div class="history">
       <b>Historia:</b>

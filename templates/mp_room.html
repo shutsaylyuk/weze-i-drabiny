@@ -8,7 +8,6 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
   <style>
-    /* TWOJE LUDZIKI - NIERUSZANE */
     .pawn {
       width: 28px !important;
       height: 38px !important;
@@ -34,29 +33,49 @@
     .cell .pawn { position: absolute !important; }
     #start-zone .pawn { position: relative !important; flex: 0 0 auto; }
 
-    /* PRZYWRÓCENIE WYGLĄDU PLANSZY */
-    .cell.magic { background-color: #fffce0 !important; }
+    /* WYGLĄD PLANSZY ZE SCREENÓW */
+    .cell { position: relative !important; border: 1px solid #000 !important; background-color: #fff; }
+    .cell.magic { background-color: #fff9c4 !important; } /* Żółte pola kart */
+    .cell.snake { background-color: #ffebee !important; } /* Węże - różowe */
+    .cell.ladder { background-color: #e8f5e9 !important; } /* Drabiny - zielone */
 
-    .target {
+    /* DUŻE NUMERY I IKONY NA ŚRODKU */
+    .feature-container {
       position: absolute;
-      bottom: 2px;
-      right: 2px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -40%);
+      text-align: center;
+      width: 100%;
+      pointer-events: none;
+    }
+
+    .feature-icon { font-size: 1.4em; line-height: 1; display: block; margin-bottom: 2px; }
+    .feature-target { font-size: 1.1em; font-weight: 900; color: #000; display: block; }
+
+    .cell .number {
+      position: absolute;
+      top: 2px;
+      left: 3px;
       font-size: 10px;
-      font-weight: bold;
-      color: #666;
-      background: rgba(255,255,255,0.7);
-      padding: 1px 3px;
-      border-radius: 3px;
+      color: #333;
       z-index: 10;
     }
 
-    /* CARD HIGHLIGHT Z TWOJEGO PLIKU */
+    /* CARD HIGHLIGHT */
     .card-highlight {
       margin-top: 15px;
       padding: 12px;
       border: 2px solid var(--accent);
       border-radius: 8px;
       background: rgba(var(--accent-rgb), 0.1);
+      animation: pulse-glow 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-glow {
+      0% { box-shadow: 0 0 5px rgba(var(--accent-rgb), 0.2); }
+      50% { box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.5); }
+      100% { box-shadow: 0 0 5px rgba(var(--accent-rgb), 0.2); }
     }
 
     .pawn.no-transition { transition: none !important; }
@@ -108,11 +127,11 @@
       <div class="card" style="padding:10px;">{{ room.message }}</div>
     {% endif %}
 
-    {% if my_player and my_player.card and my_player.card != "ANTY_WAZ" and not room.winner and not room.pending and is_my_turn and game_started %}
+    {% if my_player and my_player.card and my_player.card != "ANTY_WAZ" and not room.winner and is_my_turn and game_started %}
       <div class="card-highlight">
         <b>🃏 Twoja karta:</b> {{ my_player.card|replace('_', ' ') }}
         <form action="/mp/room/{{ room.code }}/use_card" method="post" style="margin-top:8px;">
-          <button class="btn btn-sm" style="width:100%;">Użyj karty</button>
+          <button class="btn btn-sm" id="use-card-btn" style="width:100%;">Użyj karty teraz</button>
         </form>
       </div>
     {% endif %}
@@ -181,8 +200,10 @@
             <span class="number">{{ n }}</span>
 
             {% if n in snakes_ladders %}
-              <div class="center-icon">{{ '🪜' if snakes_ladders[n] > n else '🐍' }}</div>
-              <div class="target">{{ snakes_ladders[n] }}</div>
+              <div class="feature-container">
+                <span class="feature-icon">{{ '🪜' if snakes_ladders[n] > n else '🐍' }}</span>
+                <span class="feature-target">{{ snakes_ladders[n] }}</span>
+              </div>
             {% endif %}
 
             {% for pl in room.players %}{% if pl.pos|int == n and n > 0 %}
@@ -214,6 +235,8 @@
     rollBtn: document.getElementById('roll-btn'),
     form: document.getElementById('roll-form')
   };
+
+  let isLockedForUpdate = false;
 
   function updateCache() {
     document.querySelectorAll('.cell[data-n]').forEach(c => DOM.cells[c.dataset.n] = c);
@@ -254,6 +277,7 @@
   }
 
   async function checkServer() {
+    if (isLockedForUpdate) return;
     try {
       const res = await fetch(`/mp/room/{{ room.code }}/state?t=${Date.now()}`);
       const data = await res.json();
@@ -266,6 +290,11 @@
   document.addEventListener("DOMContentLoaded", async () => {
     updateCache();
     if (DOM.rollBtn) DOM.rollBtn.classList.add('disabled');
+
+    // Rejestracja kliknięć, aby zapobiec przeładowaniu w trakcie akcji
+    document.querySelectorAll('form').forEach(f => {
+      f.addEventListener('submit', () => { isLockedForUpdate = true; });
+    });
 
     await animate();
 

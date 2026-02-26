@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Węże i drabiny • Vs komputer</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <style>
+    /* tylko małe dopieszczenie kafelków, reszta bierze się z Twojego style.css */
+    .ai-cards{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(240px, 1fr));
+      gap: 14px;
+      align-items: stretch;
+    }
+    .ai-card{
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(0,0,0,0.10);
+    }
+    .ai-card h2{
+      margin: 0;
+      font-size: 20px;
+    }
+    .ai-card p{
+      margin: 0;
+      opacity: 0.8;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+    .ai-card .btn{
+      margin-top: auto;
+      width: 100%;
+      justify-content: center;
+    }
+
+    /* mobile */
+    @media (max-width: 820px){
+      .ai-cards{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="title">Węże i drabiny</div>
+    <div class="subtitle">Vs komputer • wybierz wariant</div>
+  </div>
+
+  <nav class="tabs" aria-label="Tryby gry">
+    <a class="tab" href="/new?mode=hotseat&players=2">Hot-seat</a>
+    <a class="tab active" href="/ai">Vs komputer</a>
+    <a class="tab" href="/mp">Multiplayer</a>
+  </nav>
+
+  <div class="actions">
+    <a class="btn secondary" href="/">⬅ Wróć</a>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="info card">
+    <div class="info-row">
+      <b>Wybór trybu AI</b>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="card" style="padding:10px;">
+      <b>Klasyczna</b> – szybka wersja 1v1.<br>
+      <b>Podwójna</b> – 2 pionki vs 2 pionki.
+    </div>
+
+    <div class="spacer"></div>
+
+
+  </aside>
+
+  <main>
+    <div class="card" style="padding:16px;">
+      <h1 style="margin:0 0 12px 0;">Wybierz wersję gry</h1>
+
+      <div class="ai-cards">
+        <div class="ai-card card">
+          <h2>Klasyczna</h2>
+          <p>1 pionek vs 1 pionek</p>
+          <a class="btn" href="/new?mode=ai&variant=classic">Start</a>
+        </div>
+
+        <div class="ai-card card">
+          <h2>Podwójna</h2>
+          <p>2 pionki vs 2 pionki</p>
+          <a class="btn" href="/new?mode=ai&variant=double">Start</a>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>
